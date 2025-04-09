@@ -1,0 +1,26 @@
+{
+  "name": "textures-example",
+  "version": "1.0.0",
+  "description": "this projects demosntrates using node.js with threeks and textures",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GU-Computer-Graphics-25/l17-texture-mapping-lk911.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/GU-Computer-Graphics-25/l17-texture-mapping-lk911/issues"
+  },
+  "homepage": "https://github.com/GU-Computer-Graphics-25/l17-texture-mapping-lk911#readme",
+  "dependencies": {
+    "dat.gui": "^0.7.9",
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.2"
+  }
+}
