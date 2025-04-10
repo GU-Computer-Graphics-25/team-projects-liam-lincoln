@@ -45,18 +45,6 @@ scene.add(ah);
 var Loader = new THREE.TextureLoader();
 
 
-
-
-let box = new THREE.Mesh(
-    new THREE.BoxGeometry(2,2,2),
-    new THREE.MeshBasicMaterial({
-        color: new THREE.Color("white")
-    })
-)
-box.name = "box";
-
-//box.translateZ(-5)
-//cene.add(box)
 let boat = new THREE.Object3D();
 boat.name = "boat";
 let boatSide= new THREE.Mesh(
@@ -73,8 +61,67 @@ leftSide.position.z+=1;
 leftSide.rotateX(10);
 boat.add(leftSide);
 boat.add(rightSide);
+boat.rotateY(Math.PI/2)
 scene.add(boat);
 
+let person = new THREE.Object3D();
+person.name = "person";
+
+// Create body (elongated sphere for sitting pose)
+let body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 16, 16),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+);
+body.scale.set(1, 1.8, 1); // Make body longer
+body.position.y = 1.0; // Position body vertically
+person.add(body);
+
+// Create head
+let head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.4, 16, 16),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("Pink") })
+);
+head.position.y = 2.4; // Position head on top of longer body
+person.add(head);
+
+// Create left arm parts
+let leftUpperArm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+);
+leftUpperArm.position.set(0.6, 1.6, 0);
+leftUpperArm.rotation.z = Math.PI / 4; // Rotate arm outward
+person.add(leftUpperArm);
+
+let leftLowerArm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+);
+leftLowerArm.position.set(1.0, 1.2, 0);
+leftLowerArm.rotation.z = Math.PI / 4;
+person.add(leftLowerArm);
+
+// Create right arm parts
+let rightUpperArm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+);
+rightUpperArm.position.set(-0.6, 1.6, 0);
+rightUpperArm.rotation.z = -Math.PI / 4; // Rotate arm outward
+person.add(rightUpperArm);
+
+let rightLowerArm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+);
+rightLowerArm.position.set(-1.0, 1.2, 0);
+rightLowerArm.rotation.z = -Math.PI / 4;
+person.add(rightLowerArm);
+
+// Position the person in the boat
+person.position.set(0, 0.2, 0.5); // Slightly above the boat's surface
+person.rotation.y = Math.PI / 2; // Rotate to face forward (z direction)
+boat.add(person);
 
 // -----------------------------
 // Add Lights to the Scene
@@ -143,16 +190,26 @@ function setupCamera(cameraParameters) {
     camera.lookAt(new THREE.Vector3(cp.atX, cp.atY, cp.atZ)); // look at the scene center
     return camera;
 }
+function updateCamera() {
+    scene.remove(camera);
+    camera = setupCamera(cameraParams);
+    scene.add(camera);
+    if (enableOrbitControls) {
+        cameraControls = new THREE.OrbitControls(camera, canvas);
+        setupCameraControls(cameraControls);
+    }
+    render();
+}
 function moveBoatFowardZ() {
     let obj= scene.getObjectByName("boat", true);
-    obj.translateZ(3); 
+    obj.translateX(-1); 
     render();
 }
 
 
 function moveBoatBackwardZ() {
     let obj= scene.getObjectByName("boat", true);
-    obj.translateZ(-5);
+    obj.translateX(1);
     render();
 }
 
