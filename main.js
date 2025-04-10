@@ -49,7 +49,7 @@ let boat = new THREE.Object3D();
 boat.name = "boat";
 let boatSide= new THREE.Mesh(
     new THREE.PlaneGeometry(5,2),
-    new THREE.MeshBasicMaterial({
+    new THREE.MeshPhongMaterial({
         color: new THREE.Color("Brown"),
         side: THREE.DoubleSide
     })
@@ -70,7 +70,7 @@ person.name = "person";
 // Create body (elongated sphere for sitting pose)
 let body = new THREE.Mesh(
     new THREE.SphereGeometry(0.6, 16, 16),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+    new THREE.MeshPhongMaterial({ color: new THREE.Color("Blue") })
 );
 body.scale.set(1, 1.8, 1); // Make body longer
 body.position.y = 1.0; // Position body vertically
@@ -79,44 +79,58 @@ person.add(body);
 // Create head
 let head = new THREE.Mesh(
     new THREE.SphereGeometry(0.4, 16, 16),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color("Pink") })
+    new THREE.MeshPhongMaterial({ color: new THREE.Color("Pink") })
 );
 head.position.y = 2.4; // Position head on top of longer body
 person.add(head);
 
 // Create left arm parts
-let leftUpperArm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
-);
+let leftUpperArm = new THREE.Object3D();
+leftUpperArm.name = "leftUpperArm";
 leftUpperArm.position.set(0.6, 1.6, 0);
-leftUpperArm.rotation.z = Math.PI / 4; // Rotate arm outward
+leftUpperArm.rotation.x = Math.PI / 4; // Initial rotation for rowing position
 person.add(leftUpperArm);
 
-let leftLowerArm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+let leftUpperArmMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8),
+    new THREE.MeshPhongMaterial({ color: new THREE.Color("Blue") })
 );
-leftLowerArm.position.set(1.0, 1.2, 0);
-leftLowerArm.rotation.z = Math.PI / 4;
-person.add(leftLowerArm);
+leftUpperArm.add(leftUpperArmMesh);
+
+let leftLowerArm = new THREE.Object3D();
+leftLowerArm.name = "leftLowerArm";
+leftLowerArm.position.set(0, -0.4, 0); // Position relative to upper arm
+leftUpperArm.add(leftLowerArm);
+
+let leftLowerArmMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8),
+    new THREE.MeshPhongMaterial({ color: new THREE.Color("Blue") })
+);
+leftLowerArm.add(leftLowerArmMesh);
 
 // Create right arm parts
-let rightUpperArm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
-);
+let rightUpperArm = new THREE.Object3D();
+rightUpperArm.name = "rightUpperArm";
 rightUpperArm.position.set(-0.6, 1.6, 0);
-rightUpperArm.rotation.z = -Math.PI / 4; // Rotate arm outward
+rightUpperArm.rotation.x = Math.PI / 4; // Match left arm's initial rotation
 person.add(rightUpperArm);
 
-let rightLowerArm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color("Blue") })
+let rightUpperArmMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8),
+    new THREE.MeshPhongMaterial({ color: new THREE.Color("Blue") })
 );
-rightLowerArm.position.set(-1.0, 1.2, 0);
-rightLowerArm.rotation.z = -Math.PI / 4;
-person.add(rightLowerArm);
+rightUpperArm.add(rightUpperArmMesh);
+
+let rightLowerArm = new THREE.Object3D();
+rightLowerArm.name = "rightLowerArm";
+rightLowerArm.position.set(0, -0.4, 0); // Match left arm's position
+rightUpperArm.add(rightLowerArm);
+
+let rightLowerArmMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8),
+    new THREE.MeshPhongMaterial({ color: new THREE.Color("Blue") })
+);
+rightLowerArm.add(rightLowerArmMesh);
 
 // Position the person in the boat
 person.position.set(0, 0.2, 0.5); // Slightly above the boat's surface
@@ -175,6 +189,24 @@ lightFolder.open();
  * Render loop: called automatically every frame
  */
 function render() {
+    let boat = scene.getObjectByName("boat", true);
+    if (boat) {
+        // Get boat's world position and rotation
+        let boatPosition = new THREE.Vector3();
+        boat.getWorldPosition(boatPosition);
+        
+        // Calculate camera position based on boat's rotation
+        let offset = new THREE.Vector3(5, 5, 0);
+        offset.applyQuaternion(boat.quaternion);
+        
+        // Update camera position and target
+        camera.position.set(
+            boatPosition.x + offset.x,
+            boatPosition.y + offset.y,
+            boatPosition.z + offset.z
+        );
+        camera.lookAt(boatPosition);
+    }
     renderer.render(scene, camera);
 }
 
@@ -185,46 +217,110 @@ function render() {
 function setupCamera(cameraParameters) {
     var cp = cameraParameters;
     var camera = new THREE.PerspectiveCamera(cp.fov, cp.aspectRatio, cp.near, cp.far);
-    camera.position.set(cp.eyeX, cp.eyeY, cp.eyeZ); // set camera position
-    camera.up.set(cp.upX, cp.upY, cp.upZ); // set 'up' direction
-    camera.lookAt(new THREE.Vector3(cp.atX, cp.atY, cp.atZ)); // look at the scene center
+    camera.position.set(cp.eyeX, cp.eyeY, cp.eyeZ); 
+    camera.up.set(cp.upX, cp.upY, cp.upZ); 
+    camera.lookAt(new THREE.Vector3(cp.atX, cp.atY, cp.atZ)); 
     return camera;
 }
 function updateCamera() {
-    scene.remove(camera);
-    camera = setupCamera(cameraParams);
-    scene.add(camera);
-    if (enableOrbitControls) {
-        cameraControls = new THREE.OrbitControls(camera, canvas);
-        setupCameraControls(cameraControls);
+    let boat = scene.getObjectByName("boat", true);
+    if (boat) {
+        // Get boat's world position and rotation
+        let boatPosition = new THREE.Vector3();
+        boat.getWorldPosition(boatPosition);
+        
+        // Calculate camera position based on boat's rotation
+        let offset = new THREE.Vector3(-5, 3, 0);
+        offset.applyQuaternion(boat.quaternion);
+        
+        // Update camera parameters
+        cameraParams.atX = boatPosition.x;
+        cameraParams.atY = boatPosition.y;
+        cameraParams.atZ = boatPosition.z;
+        
+        // Set camera position relative to boat
+        cameraParams.eyeX = boatPosition.x + offset.x;
+        cameraParams.eyeY = boatPosition.y + offset.y;
+        cameraParams.eyeZ = boatPosition.z + offset.z;
+        
+        // Update camera
+        scene.remove(camera);
+        camera = setupCamera(cameraParams);
+        scene.add(camera);
+        
+        // Update orbit controls if enabled
+        if (enableOrbitControls) {
+            cameraControls = new THREE.OrbitControls(camera, canvas);
+            setupCameraControls(cameraControls);
+        }
     }
     render();
 }
 function moveBoatFowardZ() {
-    let obj= scene.getObjectByName("boat", true);
-    obj.translateX(-1); 
-    render();
+    let obj = scene.getObjectByName("boat", true);
+    obj.translateX(-1);
+    
+    // Rotate arms for rowing motion
+    let person = obj.getObjectByName("person", true);
+    if (person) {
+        let leftArm = person.getObjectByName("leftUpperArm", true);
+        let rightArm = person.getObjectByName("rightUpperArm", true);
+        if (leftArm) leftArm.rotation.x += Math.PI / 2; 
+        if (rightArm) rightArm.rotation.x += Math.PI / 2; 
+    }
+    
+    updateCamera();
 }
 
 
 function moveBoatBackwardZ() {
-    let obj= scene.getObjectByName("boat", true);
+    let obj = scene.getObjectByName("boat", true);
     obj.translateX(1);
-    render();
+    
+    // Rotate arms for rowing motion
+    let person = obj.getObjectByName("person", true);
+    if (person) {
+        let leftArm = person.getObjectByName("leftUpperArm", true);
+        let rightArm = person.getObjectByName("rightUpperArm", true);
+        if (leftArm) leftArm.rotation.x -= Math.PI / 2; 
+        if (rightArm) rightArm.rotation.x -= Math.PI / 2; 
+    }
+    
+    updateCamera();
 }
 
 
 function turnBoatLeft() {
-    let obj= scene.getObjectByName("boat", true);
-    obj.rotation.y+=5 * Math.PI / 180;
-    render();
+    let obj = scene.getObjectByName("boat", true);
+    obj.rotation.y += 5 * Math.PI / 180;
+    
+    // Rotate arms for turning
+    let person = obj.getObjectByName("person", true);
+    if (person) {
+        let leftArm = person.getObjectByName("leftUpperArm", true);
+        let rightArm = person.getObjectByName("rightUpperArm", true);
+        if (leftArm) leftArm.rotation.x += Math.PI / 3; 
+        if (rightArm) rightArm.rotation.x += Math.PI / 3; 
+    }
+    
+    updateCamera();
 }
 
 
 function turnBoatRight() {
-    let obj= scene.getObjectByName("boat", true);
-    obj.rotation.y-=5 * Math.PI / 180;
-    render();
+    let obj = scene.getObjectByName("boat", true);
+    obj.rotation.y -= 5 * Math.PI / 180;
+    
+    // Rotate arms for turning
+    let person = obj.getObjectByName("person", true);
+    if (person) {
+        let leftArm = person.getObjectByName("leftUpperArm", true);
+        let rightArm = person.getObjectByName("rightUpperArm", true);
+        if (leftArm) leftArm.rotation.x -= Math.PI / 3; 
+        if (rightArm) rightArm.rotation.x -= Math.PI / 3; 
+    }
+    
+    updateCamera();
 }
 document.addEventListener("keypress", (event) => {
     const key = event.key;
