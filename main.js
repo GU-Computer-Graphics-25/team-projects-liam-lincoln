@@ -229,6 +229,38 @@ const boundaryModelPromise = new Promise((resolve, reject) => {
     gltfLoader.load('assets/boundary_mesh.glb', resolve, undefined, reject);
 });
 
+// Tree creation function
+function createTree(scale = 1) {
+    const tree = new THREE.Object3D();
+    
+    // Create trunk
+    const trunkGeometry = new THREE.CylinderGeometry(0.2 * scale, 0.2 * scale, 1.5 * scale, 8);
+    const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    trunk.position.y = (1.5 * scale) / 2;
+    tree.add(trunk);
+    
+    // Create foliage layers
+    const foliageMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+    const numLayers = 6;
+    const baseRadius = 2 * scale;
+    const baseHeight = 0.8 * scale;
+    
+    for (let i = 0; i < numLayers; i++) {
+        const layerScale = 1 - (i / numLayers);
+        const coneGeometry = new THREE.ConeGeometry(
+            baseRadius * layerScale,
+            baseHeight,
+            8
+        );
+        const cone = new THREE.Mesh(coneGeometry, foliageMaterial);
+        cone.position.y = 1.2 * scale + (numLayers - i) * (baseHeight * 0.5);
+        tree.add(cone);
+    }
+    
+    return tree;
+}
+
 // Wait for ALL assets to load
 Promise.all([
     fragmentShaderPromise,
@@ -351,6 +383,57 @@ Promise.all([
     sunLight.target.position.copy(waterCenter);
     sunLight.target.position.y = WATER_LEVEL_Y;
     if (!sunLight.target.parent) scene.add(sunLight.target);
+
+    // After terrain is loaded and water center is calculated, add trees
+    const numTrees = 100; // Increased from 30 to 100
+    const treeScale = terrainScale * 0.15;
+    const minDistance = 10 * terrainScale; // Reduced minimum distance between trees
+    const placedTrees = [];
+    
+    // Function to check if position is too close to other trees
+    function isTooClose(position, trees) {
+        return trees.some(tree => {
+            const dx = tree.position.x - position.x;
+            const dz = tree.position.z - position.z;
+            return Math.sqrt(dx * dx + dz * dz) < minDistance;
+        });
+    }
+    
+    // Place trees randomly around the terrain
+    for (let i = 0; i < numTrees; i++) {
+        const tree = createTree(treeScale * (0.8 + Math.random() * 0.4)); // Random size variation
+        let position;
+        let attempts = 0;
+        const maxAttempts = 100; // Increased max attempts to find valid positions
+        
+        // Try to find a valid position
+        do {
+            position = new THREE.Vector3(
+                waterCenter.x + (Math.random() - 0.5) * size.x * 0.9, // Increased spread
+                WATER_LEVEL_Y,
+                waterCenter.z + (Math.random() - 0.5) * size.z * 0.9  // Increased spread
+            );
+            attempts++;
+        } while (attempts < maxAttempts && isTooClose(position, placedTrees));
+        
+        if (attempts < maxAttempts) {
+            // Cast ray down to find terrain height
+            const raycaster = new THREE.Raycaster();
+            raycaster.set(
+                new THREE.Vector3(position.x, position.y + 100, position.z),
+                new THREE.Vector3(0, -1, 0)
+            );
+            const intersects = raycaster.intersectObject(riverModel, true);
+            
+            if (intersects.length > 0 && intersects[0].point.y > WATER_LEVEL_Y + 0.5) { // Reduced height requirement
+                tree.position.copy(intersects[0].point);
+                // Add slight random rotation for variety
+                tree.rotation.y = Math.random() * Math.PI * 2;
+                scene.add(tree);
+                placedTrees.push(tree);
+            }
+        }
+    }
 
 }).catch(error => {
     console.error("Failed to load one or more assets:", error);
