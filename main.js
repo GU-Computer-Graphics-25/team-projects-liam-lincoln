@@ -26,8 +26,8 @@ const collisionCheckDistance = 5.0 * boatScale; // How far ahead to check for co
 const collisionDamping = 0.2; // Factor to reduce speed on collision (e.g., 0.2 = 80% reduction)
 const collisionNudge = 0.01; // Tiny push away from wall to prevent sticking
 // Animation
-const rowingSpeedFactor = 20;
-const maxRowingAngle = Math.PI / 4;
+const rowingSpeedFactor = 8;
+const maxRowingAngle = Math.PI / 3; // Increased angle for more dramatic motion
 const baseArmAngle = Math.PI / 6;
 // Lighting
 const dayAmbientIntensity = 0.6;
@@ -53,6 +53,7 @@ let boundaryMesh; // For collision detection
 let waterMesh; // Reference to the loaded water mesh
 // Animation Refs
 let leftUpperArmRef, rightUpperArmRef;
+let leftOarRef, rightOarRef;
 // Collision Detection
 const raycaster = new THREE.Raycaster();
 const boatForward = new THREE.Vector3(0, 0, -1); // Local forward
@@ -145,8 +146,46 @@ const headGeom = new THREE.SphereGeometry(0.4, 16, 16); const head = new THREE.M
 const armGeomUpper = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8); const armGeomLower = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8);
 leftUpperArmRef = new THREE.Object3D(); leftUpperArmRef.name = "leftUpperArm"; const leftUpperArmMesh = new THREE.Mesh(armGeomUpper, bodyMaterial); leftUpperArmMesh.position.y = -0.4; leftUpperArmRef.add(leftUpperArmMesh); const leftLowerArm = new THREE.Object3D(); leftLowerArm.name = "leftLowerArm"; const leftLowerArmMesh = new THREE.Mesh(armGeomLower, bodyMaterial); leftLowerArmMesh.position.y = -0.3; leftLowerArm.add(leftLowerArmMesh); leftLowerArm.position.set(0, -0.8, 0); leftUpperArmRef.add(leftLowerArm); leftUpperArmRef.position.set(0.7, 0.6 * 1.8 * 0.7, 0); leftUpperArmRef.rotation.z = -Math.PI / 6; leftUpperArmRef.rotation.x = baseArmAngle; person.add(leftUpperArmRef);
 rightUpperArmRef = new THREE.Object3D(); rightUpperArmRef.name = "rightUpperArm"; const rightUpperArmMesh = new THREE.Mesh(armGeomUpper, bodyMaterial); rightUpperArmMesh.position.y = -0.4; rightUpperArmRef.add(rightUpperArmMesh); const rightLowerArm = new THREE.Object3D(); rightLowerArm.name = "rightLowerArm"; const rightLowerArmMesh = new THREE.Mesh(armGeomLower, bodyMaterial); rightLowerArmMesh.position.y = -0.3; rightLowerArm.add(rightLowerArmMesh); rightLowerArm.position.set(0, -0.8, 0); rightUpperArmRef.add(rightLowerArm); rightUpperArmRef.position.set(-0.7, 0.6 * 1.8 * 0.7, 0); rightUpperArmRef.rotation.z = Math.PI / 6; rightUpperArmRef.rotation.x = baseArmAngle; person.add(rightUpperArmRef);
-person.position.set(0, 0.15, 0.3);
+
+// Create oars
+const oarGeometry = new THREE.CylinderGeometry(0.08, 0.08, 3.0, 8);
+const oarMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+const oarBladeGeometry = new THREE.BoxGeometry(0.15, 0.4, 0.8);
+const oarBladeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+
+// Left oar
+leftOarRef = new THREE.Object3D();
+const leftOar = new THREE.Mesh(oarGeometry, oarMaterial);
+leftOar.position.y = -1.5;
+leftOarRef.add(leftOar);
+const leftBlade = new THREE.Mesh(oarBladeGeometry, oarBladeMaterial);
+leftBlade.position.set(0, -1.5, 0);
+leftBlade.rotation.x = Math.PI / 2;
+leftOarRef.add(leftBlade);
+// Position oar at hand level
+leftOarRef.position.set(0.7, 0.6 * 1.8 * 0.7 - 0.8, 0); // Moved down to hand level
+leftOarRef.rotation.z = -Math.PI / 6;
+leftOarRef.rotation.x = baseArmAngle;
+person.add(leftOarRef);
+
+// Right oar
+rightOarRef = new THREE.Object3D();
+const rightOar = new THREE.Mesh(oarGeometry, oarMaterial);
+rightOar.position.y = -1.5;
+rightOarRef.add(rightOar);
+const rightBlade = new THREE.Mesh(oarBladeGeometry, oarBladeMaterial);
+rightBlade.position.set(0, -1.5, 0);
+rightBlade.rotation.x = Math.PI / 2;
+rightOarRef.add(rightBlade);
+// Position oar at hand level
+rightOarRef.position.set(-0.7, 0.6 * 1.8 * 0.7 - 0.8, 0); // Moved down to hand level
+rightOarRef.rotation.z = Math.PI / 6;
+rightOarRef.rotation.x = baseArmAngle;
+person.add(rightOarRef);
+
 boat.add(person);
+boat.add(leftOarRef);
+boat.add(rightOarRef);
 boat.scale.set(boatScale, boatScale, boatScale);
 scene.add(boat);
 
@@ -453,27 +492,59 @@ function render() {
                  boat.translateZ(proposedDisplacementZ);
             }
 
-            // --- Arm Animation ---
-            if (leftUpperArmRef && rightUpperArmRef) {
+            // --- Arm and Oar Animation ---
+            if (leftUpperArmRef && rightUpperArmRef && leftOarRef && rightOarRef) {
                 const animIntensity = Math.min(1, currentSpeed / (maxSpeed * 0.75));
-                const rowingAngleOffset = Math.sin(elapsedTime * rowingSpeedFactor) * maxRowingAngle * animIntensity;
-                leftUpperArmRef.rotation.x = baseArmAngle + rowingAngleOffset;
-                rightUpperArmRef.rotation.x = baseArmAngle + rowingAngleOffset;
+                const time = elapsedTime * rowingSpeedFactor;
+                
+                // Create a more natural rowing motion with proper pull and dip
+                const pullPhase = Math.sin(time);
+                const dipPhase = Math.sin(time + Math.PI/2);
+                
+                // Calculate angles based on phases
+                const rowingAngle = (pullPhase * 0.5 + 0.5) * maxRowingAngle * animIntensity;
+                const forwardAngle = dipPhase * (Math.PI / 4) * animIntensity;
+                const bladeAngle = Math.abs(dipPhase) * 0.5 * animIntensity;
+                
+                // Left arm and oar
+                leftUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
+                leftUpperArmRef.rotation.z = Math.PI / 6 - forwardAngle;
+                // Oar follows arm with additional blade rotation
+                leftOarRef.rotation.x = baseArmAngle + rowingAngle;
+                leftOarRef.rotation.z = Math.PI / 6 - forwardAngle;
+                leftOarRef.rotation.y = -bladeAngle;
+                // Adjust oar position to follow hand
+                leftOarRef.position.y = 0.6 * 1.8 * 0.7 - 0.8 + Math.sin(time) * 0.1 * animIntensity;
+                
+                // Right arm and oar
+                rightUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
+                rightUpperArmRef.rotation.z = -Math.PI / 6 + forwardAngle;
+                // Oar follows arm with additional blade rotation
+                rightOarRef.rotation.x = baseArmAngle + rowingAngle;
+                rightOarRef.rotation.z = -Math.PI / 6 + forwardAngle;
+                rightOarRef.rotation.y = bladeAngle;
+                // Adjust oar position to follow hand
+                rightOarRef.position.y = 0.6 * 1.8 * 0.7 - 0.8 + Math.sin(time) * 0.1 * animIntensity;
             }
         } // End boat physics update
 
         // Update Chase Camera
         if (currentCamera === camera && boat) {
             boat.getWorldPosition(boatWorldPosition);
-            boat.getWorldQuaternion(boatWorldQuaternion);
 
-            const lookAtOffset = boatForward.clone().applyQuaternion(boatWorldQuaternion).multiplyScalar(-6 * boatScale);
-            const lookAtTarget = boatWorldPosition.clone().add(lookAtOffset);
-            lookAtTarget.y = Math.max(WATER_LEVEL_Y - 2, boatWorldPosition.y - 2);
+            // Calculate camera position relative to boat without rotation
+            desiredCamPos.set(
+                boatWorldPosition.x + chaseCameraOffset.x,
+                boatWorldPosition.y + chaseCameraOffset.y,
+                boatWorldPosition.z + chaseCameraOffset.z
+            );
 
-            desiredCamPos.set(0, chaseCameraOffset.y, chaseCameraOffset.z);
-            desiredCamPos.applyQuaternion(boatWorldQuaternion);
-            desiredCamPos.add(boatWorldPosition);
+            // Calculate look-at target without rotation
+            const lookAtTarget = new THREE.Vector3(
+                boatWorldPosition.x,
+                Math.max(WATER_LEVEL_Y - 2, boatWorldPosition.y - 2),
+                boatWorldPosition.z
+            );
 
             const lerpSpeed = cameraLerpFactor;
             camera.position.lerp(desiredCamPos, lerpSpeed);
