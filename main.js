@@ -278,7 +278,7 @@ Promise.all([
         boundaryModel.traverse((child) => {
             if (child.isMesh) {
                 boundaryMesh = child;
-                boundaryMesh.visible = truewd; // <<< Hide the boundary mesh
+                boundaryMesh.visible = true; // <<< Hide the boundary mesh
             }
         });
         if (!boundaryMesh) throw new Error("No mesh found in boundary_mesh.glb");
