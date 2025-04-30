@@ -11,6 +11,7 @@ uniform vec2 resolution; // Viewport resolution (width, height)
 uniform float time;       // Time elapsed
 uniform float patternScale; // Overall scale factor for noise patterns
 uniform float timeScale;    // Overall speed factor for animation
+// <<< NOTE: uAlpha uniform was removed in the provided base version, keeping it removed >>>
 
 // <<< Output Variable Declaration >>>
 // Output color (implicitly vec4 pc_fragColor in Three.js r152+)
@@ -135,9 +136,9 @@ void main() {
     // --- Parameters --- [Adjusted] ---
     // Colors
     vec3 colorBackground = vec3(0.15, 0.45, 0.80);
-    vec3 colorDarkLine   = vec3(0.10, 0.35, 0.70);
+    vec3 colorDarkLine   = vec3(0.12, 0.42, 0.75); // Lighter dark line color
     vec3 colorFoamLine   = vec3(0.95, 0.98, 1.00);
-    // vec3 colorStreak     = vec3(0.12, 0.40, 0.75); // Streaks disabled
+    vec3 colorStaticGlow = vec3(1.0, 1.0, 1.0); // Static glow color (white)
 
     // Timing & Animation
     float masterTimeFactor = 0.35;
@@ -151,7 +152,7 @@ void main() {
     // Foam Currents - Calculated using UV coords 'st' (from vUv2)
     float foamCurrentFrequency = 2.2;
     float foamCurrentSpeed = 0.12;
-    float foamCurrentStrength = 0.0005; // <<< DECREASED foam distortion drastically (was 0.002)
+    float foamCurrentStrength = 0.002; // Keep foam distortion minimal
 
     // Dark Lines - Sampled using UV coords 'st' (from vUv2)
     float darkWaveFrequency = 8.0; // Keep smaller scale
@@ -160,18 +161,18 @@ void main() {
     float darkLineSharpness = 1.5;
 
     // Foam Band - Sampled using UV coords 'st' (from vUv2)
-    float foamBandFrequency = 20.0; // <<< INCREASED frequency significantly (was 12.0)
+    float foamBandFrequency = 12.0; // Keep smaller scale
     float waveSpeedFoam = 0.22;
-    float foamBandStart = 0.56;      // Keep thin band start
-    float foamBandEnd = 0.57;        // Keep thin band end -> Width = 0.01
-    float foamBandSharpness = 4.5;   // Keep sharp band edges
+    float foamBandStart = 0.58;      // Keep band less visible
+    float foamBandEnd = 0.59;        // Keep band less visible -> Width = 0.01
+    float foamBandSharpness = 5.0;   // Keep sharp band edges
 
     // Breakup Mask - Calculated using UV coords 'st' (from vUv2)
-    float breakupNoiseFreq = 10.0; // Keep smaller scale
+    float breakupNoiseFreq = 1.5; // Keep larger blobs
     float breakupNoiseSpeed = 0.15;
     float breakupStrength = 1.0;
-    float breakupThreshold = 0.75;
-    float breakupSmoothness = 0.01;
+    float breakupThreshold = 0.65; // Keep blob mask threshold
+    float breakupSmoothness = 0.05; // Keep softer blob edges
 
     // Dark Line Appearance
     float darkLineOpacity = 0.90;
@@ -179,14 +180,36 @@ void main() {
     // Flow Streaks (Disabled)
     float streakStrength = 0.0;   // <<< STREAKS DISABLED
 
+    // Static Edge Glow - Uses ORIGINAL UVs 'st_orig'
+    float staticGlowAlpha = 0.5;
+    float staticGlowDistance = 0.25; // <<< INCREASED distance (was 0.20)
+    float staticGlowSharpness = 0.8;
+    float staticGlowDarkBoost = 1.8;
+
     // Dynamic Edge Lapping Waves (Shoreline Foam) - Uses ORIGINAL UVs 'st_orig' (from vUv)
-    float lapWaveSpeed = 1.2;
-    float lapWavePeakSharpness = 18.0;
-    float lapWaveRadialFreq = 60.0;
-    float lapWaveIntensityMultiplier = 3.0;
-    float lapWaveDistortionFreq = 8.0;
-    float lapWaveDistortionStrength = 0.12;
-    float edgeWaveFadeDistance = 0.04;
+    float lapWaveSpeed = 0.8;
+    float lapWavePeakSharpness = 8.0;
+    float lapWaveRadialFreq = 30.0;
+    float lapWaveIntensityMultiplier = 1.0;
+    float lapWaveDistortionFreq = 15.0; // <<< INCREASED distortion frequency (was 12.0)
+    float lapWaveDistortionStrength = 0.10; // <<< DECREASED distortion strength (was 0.18)
+    float edgeWaveFadeDistance = 0.08;
+
+
+    // Radial Wave Effect - Uses SECOND UV Coords 'st' (from vUv2)
+    float radialWaveSpokeCount = 60.0; // <<< INCREASED spoke count (was 30.0)
+    float radialWaveFreq = 8.0;
+    float radialWaveSpeed = 0.3;
+    float radialWaveRotationSpeed = 0.05;
+    float radialWaveSharpness = 35.0; // <<< INCREASED sharpness for thinner lines (was 25.0)
+    float radialWaveIntensity = 0.6;
+    float radialWaveDistortionFreq = 25.0;
+    float radialWaveDistortionStrength = 0.08; // Keep decreased distortion strength
+    float radialWaveMaskFreq = 1.8;
+    float radialWaveMaskSpeed = 0.1;
+    float radialWaveMaskThreshold = 0.55;
+    float radialWaveMaskSmoothness = 0.05;
+    // Removed fade distance parameters for radial waves
 
 
     // --- Calculations ---
@@ -195,28 +218,28 @@ void main() {
     float distToEdge = min(min(st_orig.x, 1.0 - st_orig.x), min(st_orig.y, 1.0 - st_orig.y));
     distToEdge = max(distToEdge, 0.0001);
 
-    // 2. Calculate Edge Distortion Vector & Fade (Uses ORIGINAL UVs: st_orig)
+    // 2. Calculate Edge Distortion Vector (Uses ORIGINAL UVs: st_orig)
     // Apply patternScale here
     vec3 lapDistortNoiseCoord = vec3(st_orig * patternScale * lapWaveDistortionFreq, masterTime * 0.2); // Uses increased freq
     vec2 edgeDistortion = vec2(
         snoise(lapDistortNoiseCoord),
         snoise(lapDistortNoiseCoord + vec3(17.8, -5.3, 29.1))
-    ) * lapWaveDistortionStrength; // <<< Uses increased strength
+    ) * lapWaveDistortionStrength; // <<< Uses decreased strength
 
     // 3. Calculate Advection Currents SEPARATELY (Uses SECOND UV Coords: st from vUv2)
     vec2 mainCurrentVector = calculate_main_current(st, masterTime * mainCurrentSpeed, mainCurrentFrequency, mainCurrentStrength);
-    vec2 foamCurrentVector = calculate_foam_current(st, masterTime * foamCurrentSpeed, foamCurrentFrequency, foamCurrentStrength); // <<< Uses drastically decreased strength
+    vec2 foamCurrentVector = calculate_foam_current(st, masterTime * foamCurrentSpeed, foamCurrentFrequency, foamCurrentStrength);
 
     // 4. Determine Final Sampling Coords (Based on SECOND UV Coords + Advection)
     vec2 dark_final_st = st + mainCurrentVector;
-    vec2 foam_final_st = st + foamCurrentVector; // <<< Will now have very little distortion
+    vec2 foam_final_st = st + foamCurrentVector;
 
     // 5. Calculate Breakup Mask (Based on SECOND UV Coords: st from vUv2)
     // Apply patternScale and frequency multiplier here
-    vec3 breakNoiseCoord = vec3(st * patternScale * breakupNoiseFreq, masterTime * breakupNoiseSpeed); // Uses increased frequency
+    vec3 breakNoiseCoord = vec3(st * patternScale * breakupNoiseFreq, masterTime * breakupNoiseSpeed); // Uses decreased frequency for blobs
     float breakupMaskNoise = snoise(breakNoiseCoord) * 0.5 + 0.5; // Map snoise [-1,1] to [0,1]
     float breakupMask = smoothstep(
-        breakupThreshold - breakupSmoothness * 0.5,
+        breakupThreshold - breakupSmoothness * 0.5, // <<< Adjusted threshold/smoothness
         breakupThreshold + breakupSmoothness * 0.5,
         breakupMaskNoise
     );
@@ -225,7 +248,7 @@ void main() {
 
     // --- Dark Lines (Simplex based) --- (Uses SECOND UV Coords: dark_final_st from vUv2)
     // Apply patternScale and frequency multiplier here
-    vec3 darkNoiseCoord = vec3(dark_final_st * patternScale * darkWaveFrequency, masterTime * waveSpeedDark); // Uses increased frequency
+    vec3 darkNoiseCoord = vec3(dark_final_st * patternScale * darkWaveFrequency, masterTime * waveSpeedDark); // Uses smaller scale freq
     float darkNoiseValue = snoise(darkNoiseCoord); // Output is [-1, 1]
     float darkNoiseValue01 = darkNoiseValue * 0.5 + 0.5; // Map to [0, 1]
     float darkLineIntensity = calculate_line_intensity(darkNoiseValue01, darkLineThreshold, darkLineSharpness);
@@ -235,10 +258,10 @@ void main() {
 
     // --- Foam Band (Simplex based) --- (Uses SECOND UV Coords: foam_final_st from vUv2)
     // Apply patternScale and frequency multiplier here
-    vec3 foamSimplexCoord = vec3(foam_final_st * patternScale * foamBandFrequency, masterTime * waveSpeedFoam); // <<< Uses increased frequency and less distorted coords
+    vec3 foamSimplexCoord = vec3(foam_final_st * patternScale * foamBandFrequency, masterTime * waveSpeedFoam); // Uses smaller scale freq
     float foamSimplexValue = snoise(foamSimplexCoord); // Output is [-1, 1]
     float foamSimplexValue01 = foamSimplexValue * 0.5 + 0.5; // Map to [0, 1]
-    float foamIntensity_base = calculate_band_intensity(foamSimplexValue01, foamBandStart, foamBandEnd, foamBandSharpness); // Uses adjusted band start/end/sharpness
+    float foamIntensity_base = calculate_band_intensity(foamSimplexValue01, foamBandStart, foamBandEnd, foamBandSharpness); // <<< Adjusted band values for less visibility
     float foamIntensity_masked = foamIntensity_base * lineVisibilityMask; // Apply mask
 
 
@@ -246,41 +269,82 @@ void main() {
     float streakIntensity = 0.0; // Hardcoded 0
 
 
+    // --- Static Edge Glow --- (Uses ORIGINAL UVs: st_orig, distToEdge)
+    float staticGlowFactor = smoothstep(staticGlowDistance, 0.0, distToEdge); // Fade from edge (uses increased distance)
+    staticGlowFactor *= pow(staticGlowFactor, staticGlowSharpness); // Adjust fade curve
+
+
     // --- Dynamic Edge Lapping Waves (Shoreline Foam) --- (Uses ORIGINAL UVs: st_orig, distToEdge)
     // <<< Using Sharpened Sine Wave + Distance Fade Approach >>>
     // Distort the distance slightly using the UV-based edge distortion
-    float distortedDistToEdge = distToEdge - dot(edgeDistortion, normalize(st_orig - 0.5)) * 0.5; // <<< Apply increased distortion
+    float distortedDistToEdge = distToEdge - dot(edgeDistortion, normalize(st_orig - 0.5)) * 0.5; // <<< Apply adjusted distortion
     distortedDistToEdge = max(distortedDistToEdge, 0.0001);
 
-    float radialPhase = distortedDistToEdge * lapWaveRadialFreq - masterTime * lapWaveSpeed; // Calculate phase with distorted dist
+    float radialPhase = distortedDistToEdge * lapWaveRadialFreq - masterTime * lapWaveSpeed; // Calculate phase with distorted dist & decreased freq
 
     // Calculate sine wave and map to [0, 1]
     float waveValue = sin(radialPhase * PI * 2.0) * 0.5 + 0.5;
 
     // Sharpen the peaks using pow() - higher power means thinner lines
-    float sharpWave = pow(waveValue, lapWavePeakSharpness); // <<< Increased sharpness
+    float sharpWave = pow(waveValue, lapWavePeakSharpness); // <<< Adjusted sharpness
 
     // Apply intensity multiplier for brightness
-    float lapLineIntensity_base = sharpWave * lapWaveIntensityMultiplier; // Keep brightness boost
+    float lapLineIntensity_base = sharpWave * lapWaveIntensityMultiplier; // <<< Adjusted brightness boost
 
     // Apply distance fade (allow extending slightly further)
-    lapLineIntensity_base *= smoothstep(edgeWaveFadeDistance, 0.0, distortedDistToEdge); // Use adjusted fade distance
+    lapLineIntensity_base *= smoothstep(edgeWaveFadeDistance, 0.0, distortedDistToEdge); // <<< Increased fade distance
 
     // <<< DO NOT APPLY MASK HERE >>>
     float lapLineIntensity_final = clamp(lapLineIntensity_base, 0.0, 1.0); // Clamp final edge wave intensity
 
 
+    // --- Radial Wave Effect --- (Uses SECOND UV Coords: st from vUv2)
+    vec2 center = vec2(0.7, 0.5); // <<< Adjusted center point (was 0.5, 0.5)
+    vec2 dir = st - center;
+    float distFromCenter = length(dir);
+    float angle = atan(dir.y, dir.x);
+
+    // Add slow rotation
+    angle += masterTime * radialWaveRotationSpeed;
+
+    // Add high-frequency distortion to angle
+    vec3 radialDistortCoord = vec3(st * patternScale * radialWaveDistortionFreq, masterTime * 0.8);
+    float angleDistortion = snoise(radialDistortCoord) * radialWaveDistortionStrength; // <<< Uses decreased strength
+    angle += angleDistortion;
+
+    // Calculate base radial wave pattern (sine wave based on angle and distance/time)
+    float radialWavePattern = sin(angle * radialWaveSpokeCount + distFromCenter * radialWaveFreq - masterTime * radialWaveSpeed) * 0.5 + 0.5; // <<< Uses increased spoke count
+
+    // Sharpen into thin lines
+    float radialWaveLines = pow(radialWavePattern, radialWaveSharpness); // <<< Uses increased sharpness
+
+    // Create mask for radial waves
+    vec3 radialMaskCoord = vec3(st * patternScale * radialWaveMaskFreq, masterTime * radialWaveMaskSpeed);
+    float radialMaskNoise = snoise(radialMaskCoord) * 0.5 + 0.5;
+    float radialMask = smoothstep(radialWaveMaskThreshold, radialWaveMaskThreshold + radialWaveMaskSmoothness, radialMaskNoise);
+
+    // Calculate final radial wave intensity (apply intensity, mask) <<< REMOVED DISTANCE FADE
+    float radialWaveIntensity_final = radialWaveLines * radialWaveIntensity * radialMask;
+    // radialWaveIntensity_final *= smoothstep(radialWaveFadeEndDist, radialWaveFadeStartDist, distFromCenter); // Fade removed
+    radialWaveIntensity_final = clamp(radialWaveIntensity_final, 0.0, 1.0);
+
+
     // --- Final Compositing ---
-    vec3 finalColor = colorBackground;
-    // Mix dark lines
-    finalColor = mix(finalColor, colorDarkLine, clamp(darkLineIntensity, 0.0, 1.0));
-    // Mix foam band (masked) + edge wave (unmasked)
-    float totalFoamIntensity = clamp(foamIntensity_masked + lapLineIntensity_final, 0.0, 1.0); // Add unmasked edge wave
-    finalColor = mix(finalColor, colorFoamLine, totalFoamIntensity);
-    // Mix streaks (disabled)
-    // finalColor = mix(finalColor, colorStreak, clamp(streakIntensity, 0.0, 1.0));
+    vec3 baseColor = mix(colorBackground, colorDarkLine, clamp(darkLineIntensity, 0.0, 1.0));
+
+    // Apply static glow additively, boosting effect over dark lines
+    float glowBoost = mix(1.0, staticGlowDarkBoost, clamp(darkLineIntensity, 0.0, 1.0)); // Boost based on dark line presence
+    vec3 colorWithGlow = baseColor + colorStaticGlow * staticGlowFactor * staticGlowAlpha * glowBoost; // <<< Increased alpha & boost & distance
+
+    // Combine all foam intensities (masked band + unmasked edge wave + masked radial wave)
+    float totalFoamIntensity = clamp(foamIntensity_masked + lapLineIntensity_final + radialWaveIntensity_final, 0.0, 1.0);
+
+    // Mix foam color onto the glowed base color
+    vec3 finalColor = mix(colorWithGlow, colorFoamLine, totalFoamIntensity);
+
+    // Clamp final RGB
     finalColor = clamp(finalColor, 0.0, 1.0);
 
     // --- Output ---
-    gl_FragColor = vec4(finalColor, 1.0); // Standard GLSL output
+    gl_FragColor = vec4(finalColor, 1.0); // Use alpha 1.0
 }
