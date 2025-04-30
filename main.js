@@ -8,7 +8,7 @@ import * as dat from 'dat.gui';
 
 // --- Configuration ---
 const terrainScale = 10;
-const WATER_LEVEL_Y = -18.5;
+const WATER_LEVEL_Y = -17.0;
 const patternScaleFactor = 1.0; // Initial pattern scale (can be adjusted via GUI)
 const waterTimeScaleFactor = 1.0; // Default time scale (1.0 = normal speed)
 const waterAlpha = 0.85; // <<< Set desired base water transparency (0.0 to 1.0) >>>
