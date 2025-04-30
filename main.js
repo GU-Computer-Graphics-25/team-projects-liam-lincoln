@@ -11,7 +11,8 @@ const terrainScale = 10;
 const WATER_LEVEL_Y = -18.5;
 const patternScaleFactor = 1.0; // Initial pattern scale (can be adjusted via GUI)
 const waterTimeScaleFactor = 1.0; // Default time scale (1.0 = normal speed)
-const waterAlpha = 0.9; // <<< NEW: Set desired water transparency (0.0 to 1.0) >>>
+const waterAlpha = 0.85; // <<< Set desired base water transparency (0.0 to 1.0) >>>
+// const waterColor = 0x336699; // No longer needed for ShaderMaterial
 // Camera
 const chaseCameraOffset = new THREE.Vector3(0, 45, 15);
 const cameraLerpFactor = 0.08;
@@ -71,7 +72,7 @@ const guiState = {
     lightingMode: 'Day',
     timeScale: waterTimeScaleFactor,
     patternScale: patternScaleFactor,
-    waterAlpha: waterAlpha // <<< Add alpha to GUI state >>>
+    waterAlpha: waterAlpha // <<< Keep alpha in GUI state >>>
 };
 // FPS Lock
 let timeAccumulator = 0;
@@ -194,35 +195,26 @@ boat.scale.set(boatScale, boatScale, boatScale);
 scene.add(boat);
 
 // --- Water Plane Shader Definition ---
-// <<< Vertex Shader code using 'uv1' >>>
+// <<< Vertex shader code using 'uv1' >>>
 const waterVertexShader = `
-  // Varyings to pass to Fragment Shader
   varying vec2 vUv;  // Original UV Map (from 'uv' attribute)
   varying vec2 vUv2; // Still passing as vUv2, but reading from 'uv1' attribute
-
-  // Attributes from Geometry
-  attribute vec2 uv1; // <<< CHANGED: Expect 'uv1' attribute from BufferGeometry >>>
+  attribute vec2 uv1; // Expect 'uv1' attribute from BufferGeometry
 
   void main() {
-    // Pass original UV map
     vUv = uv;
-
-    // <<< CHANGED: Pass second UV map (read from uv1) as vUv2 >>>
-    vUv2 = uv1;
-
-    // Standard position calculation
+    vUv2 = uv1; // Pass uv1 as vUv2
     gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
   }
 `;
-// Uniforms for the water shader
+// <<< Uniforms for the ShaderMaterial >>>
 const waterUniforms = {
     time: { value: 0.0 },
     resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-    patternScale: { value: guiState.patternScale }, // Use GUI state
-    timeScale: { value: guiState.timeScale },       // Use GUI state
-    uAlpha: { value: guiState.waterAlpha }          // <<< NEW: Add alpha uniform >>>
+    patternScale: { value: guiState.patternScale },
+    timeScale: { value: guiState.timeScale },
+    uAlpha: { value: guiState.waterAlpha } // <<< Add alpha uniform >>>
 };
-// waterMaterial creation moved to Promise.all
 
 // --- Async Asset Loading ---
 async function loadShaderFile(url) {
@@ -238,8 +230,8 @@ const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath( 'https://www.gstatic.com/draco/v1/decoders/' );
 gltfLoader.setDRACOLoader( dracoLoader );
 
-// <<< Make sure this path is correct >>>
-const fragmentShaderPromise = loadShaderFile('assets/water_fragment.glsl');
+// <<< Load the fragment shader >>>
+const fragmentShaderPromise = loadShaderFile('assets/water_fragment.glsl'); // Make sure path is correct
 const terrainModelPromise = new Promise((resolve, reject) => {
     gltfLoader.load('assets/river.glb', resolve, undefined, reject);
 });
@@ -253,69 +245,58 @@ const boundaryModelPromise = new Promise((resolve, reject) => {
 // Tree creation function
 function createTree(scale = 1) {
     const tree = new THREE.Object3D();
-
-    // Create trunk
     const trunkGeometry = new THREE.CylinderGeometry(0.2 * scale, 0.2 * scale, 1.5 * scale, 8);
     const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
     const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
     trunk.position.y = (1.5 * scale) / 2;
     tree.add(trunk);
-
-    // Create foliage layers
     const foliageMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
     const numLayers = 6;
     const baseRadius = 2 * scale;
     const baseHeight = 0.8 * scale;
-
     for (let i = 0; i < numLayers; i++) {
         const layerScale = 1 - (i / numLayers);
-        const coneGeometry = new THREE.ConeGeometry(
-            baseRadius * layerScale,
-            baseHeight,
-            8
-        );
+        const coneGeometry = new THREE.ConeGeometry(baseRadius * layerScale, baseHeight, 8);
         const cone = new THREE.Mesh(coneGeometry, foliageMaterial);
         cone.position.y = 1.2 * scale + (numLayers - i) * (baseHeight * 0.5);
         tree.add(cone);
     }
-
     return tree;
 }
 
 // Wait for ALL assets to load
 Promise.all([
-    fragmentShaderPromise,
+    fragmentShaderPromise, // <<< Load fragment shader text >>>
     terrainModelPromise,
     waterMeshModelPromise,
     boundaryModelPromise
 ]).then(([
-    fragmentShaderText,
+    fragmentShaderText, // <<< Get fragment shader text >>>
     terrainGltf,
     waterMeshGltf,
     boundaryGltf
 ]) => {
     console.log("Assets loaded (Fragment Shader, Terrain, Water Mesh, Boundary)");
 
-    // --- Create Water Material ---
+    // --- Create Water Material using ShaderMaterial --- <<< REVERTED
     try {
         waterMaterial = new THREE.ShaderMaterial({
-            vertexShader: waterVertexShader, // <<< Use the vertex shader code expecting 'uv1' >>>
-            fragmentShader: fragmentShaderText,
-            uniforms: waterUniforms,
+            vertexShader: waterVertexShader,    // Use our vertex shader
+            fragmentShader: fragmentShaderText, // Use loaded fragment shader
+            uniforms: waterUniforms,            // Use defined uniforms
             side: THREE.DoubleSide,
-            transparent: true, // <<< ENABLE TRANSPARENCY >>>
-            // depthWrite: true // Optional: Keep true unless sorting issues arise
+            transparent: true                   // <<< ENABLE TRANSPARENCY >>>
         });
-        console.log("Custom water material created (Transparent).");
+        console.log("Custom ShaderMaterial created for water (Transparent).");
 
     } catch (error) {
-        console.error("Error creating custom water material:", error);
+        console.error("Error creating ShaderMaterial:", error);
         console.log("Falling back to basic water material.");
-        waterMaterial = new THREE.MeshBasicMaterial({
+        waterMaterial = new THREE.MeshBasicMaterial({ // Fallback is Basic
             color: 0x0000FF,
             side: THREE.DoubleSide,
-            transparent: true, // <<< Enable transparency for fallback too >>>
-            opacity: waterAlpha
+            transparent: true,
+            opacity: guiState.waterAlpha // Use opacity here too
         });
     }
 
@@ -335,30 +316,23 @@ Promise.all([
         waterMeshGltf.scene.traverse((child) => {
             if (child.isMesh) {
                 waterMesh = child;
-                // <<< UPDATED CHECK: Look for 'uv1' specifically >>>
-                if (!waterMesh.geometry.attributes.uv1) {
-                    console.warn("!!! Loaded water mesh geometry does NOT have 'uv1' attribute. Shader might fail or use 'uv'. Ensure model is exported correctly with 2+ UV maps. !!!");
-                    // Optional: Could still duplicate uv as uv1 if needed as a last resort
-                    if (waterMesh.geometry.attributes.uv) {
-                       waterMesh.geometry.setAttribute('uv1', waterMesh.geometry.attributes.uv.clone());
-                       console.log("Duplicated 'uv' as 'uv1' for fallback.");
-                    }
-                } else {
-                    console.log("Water mesh geometry has 'uv1' attribute.");
+                // Check for uv1 (needed by vertex shader)
+                if (!waterMesh.geometry.attributes.uv1 && waterMesh.geometry.attributes.uv) {
+                   console.warn("Water mesh geometry missing 'uv1', duplicating 'uv'.");
+                   waterMesh.geometry.setAttribute('uv1', waterMesh.geometry.attributes.uv.clone());
+                } else if (!waterMesh.geometry.attributes.uv1) {
+                    console.error("Water mesh geometry missing 'uv' and 'uv1' attributes!");
                 }
-                // Log all attributes for debugging
                 console.log("Water Mesh Attributes:", waterMesh.geometry.attributes);
             }
         });
         if (!waterMesh) throw new Error("No mesh found in water_mesh.glb");
 
-        waterMesh.material = waterMaterial; // Apply the shader material
+        waterMesh.material = waterMaterial; // Apply the ShaderMaterial
         waterMesh.name = "water";
         waterMesh.scale.copy(riverModel.scale);
         waterMesh.position.set(waterCenter.x, WATER_LEVEL_Y, waterCenter.z);
-        // <<< IMPORTANT for Transparency: Ensure water renders after opaque objects >>>
-        // Adjust renderOrder if needed, lower numbers render first.
-        // waterMesh.renderOrder = 1; // Example: Render after default objects (0)
+        // waterMesh.renderOrder = 1; // Optional: Adjust render order for transparency
         scene.add(waterMesh);
         console.log("Loaded water mesh added to scene.");
 
@@ -368,11 +342,11 @@ Promise.all([
         const fallbackWaterGeometry = new THREE.PlaneGeometry(size.x, size.z, 100, 100);
         // Generate uv1 for the fallback plane (duplicating uv)
         fallbackWaterGeometry.setAttribute('uv1', fallbackWaterGeometry.attributes.uv.clone());
-        const fallbackMaterial = waterMaterial.isShaderMaterial ? waterMaterial : new THREE.MeshBasicMaterial({
+        const fallbackMaterial = waterMaterial.isShaderMaterial ? waterMaterial : new THREE.MeshBasicMaterial({ // Use Basic fallback
             color: 0x0000FF,
             side: THREE.DoubleSide,
             transparent: true,
-            opacity: waterAlpha
+            opacity: guiState.waterAlpha
          });
         waterMesh = new THREE.Mesh(fallbackWaterGeometry, fallbackMaterial);
         waterMesh.rotation.x = -Math.PI / 2;
@@ -478,7 +452,12 @@ Promise.all([
 }).catch(error => {
     console.error("Failed to load one or more assets:", error);
     if (!scene.getObjectByName("water") && !scene.getObjectByName("water_fallback_plane") && !scene.getObjectByName("water_load_error_fallback")) {
-         const fallbackMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF, side: THREE.DoubleSide, transparent: true, opacity: waterAlpha });
+         const fallbackMaterial = new THREE.MeshBasicMaterial({ // Use Basic fallback
+            color: 0x0000FF,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: guiState.waterAlpha // Use opacity here too
+         });
          const fallbackGeo = new THREE.PlaneGeometry(200, 200);
          const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMaterial);
          fallbackMesh.rotation.x = -Math.PI / 2;
@@ -535,15 +514,15 @@ gui.add(guiState, 'lightingMode', ['Day', 'Night'])
         }
     });
 
-gui.add(guiState, 'timeScale', 0.0, 5.0, 0.05)
-   .name('Water Speed')
+gui.add(guiState, 'timeScale', 0.0, 5.0, 0.05) // <<< Keep GUI for shader uniform >>>
+   .name('Water Anim Speed') // Renamed for clarity
    .onChange((value) => {
        if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
            waterMaterial.uniforms.timeScale.value = value;
        }
    });
 
-gui.add(guiState, 'patternScale', 0.1, 10.0, 0.1) // Added patternScale GUI
+gui.add(guiState, 'patternScale', 0.1, 10.0, 0.1) // <<< Keep GUI for shader uniform >>>
    .name('Water Pattern Scale')
    .onChange((value) => {
        if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
@@ -551,8 +530,7 @@ gui.add(guiState, 'patternScale', 0.1, 10.0, 0.1) // Added patternScale GUI
        }
    });
 
-// <<< ADDED: GUI control for waterAlpha >>>
-gui.add(guiState, 'waterAlpha', 0.0, 1.0, 0.01)
+gui.add(guiState, 'waterAlpha', 0.0, 1.0, 0.01) // <<< Keep GUI for alpha uniform >>>
    .name('Water Opacity')
    .onChange((value) => {
        if (waterMaterial && waterMaterial.isShaderMaterial) {
@@ -566,7 +544,7 @@ gui.add(guiState, 'waterAlpha', 0.0, 1.0, 0.01)
 gui.add(guiState, 'axesHelper').name('Show Axes').onChange((v) => ah.visible = v);
 
 // --- Render Loop Variables ---
-const clock = new THREE.Clock(); // <<< MOVED clock definition HERE, before render function >>>
+const clock = new THREE.Clock();
 const boatWorldPosition = new THREE.Vector3();
 const boatWorldQuaternion = new THREE.Quaternion();
 const desiredCamPos = new THREE.Vector3();
@@ -577,8 +555,8 @@ const collisionNormal = new THREE.Vector3();
 /**
  * Render loop: Handles updates and rendering
  */
-function render() { // <<< render function definition comes AFTER clock definition >>>
-    const deltaTime = Math.min(clock.getDelta(), 0.05); // Should now work
+function render() {
+    const deltaTime = Math.min(clock.getDelta(), 0.05);
     timeAccumulator += deltaTime;
 
     // Use fixed timestep loop
@@ -586,12 +564,12 @@ function render() { // <<< render function definition comes AFTER clock definiti
         const effectiveDeltaTime = targetFrameDuration;
         timeAccumulator -= targetFrameDuration;
 
-        const elapsedTime = clock.getElapsedTime(); // Should now work
+        const elapsedTime = clock.getElapsedTime();
 
         // --- Update Logic ---
-        if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
+        // <<< Update uniforms for the ShaderMaterial >>>
+        if (waterMaterial && waterMaterial.isShaderMaterial) {
             waterMaterial.uniforms.time.value = elapsedTime;
-            // Ensure uniforms match GUI state
             waterMaterial.uniforms.timeScale.value = guiState.timeScale;
             waterMaterial.uniforms.patternScale.value = guiState.patternScale;
             waterMaterial.uniforms.uAlpha.value = guiState.waterAlpha; // Update alpha uniform
@@ -761,14 +739,14 @@ document.addEventListener("keyup", (event) => {
 window.addEventListener('resize', onWindowResize, false);
 function onWindowResize() {
     const aspect = window.innerWidth / window.innerHeight;
-    // Update cameras
+    // Update cawaaaameras
     camera.aspect = aspect; camera.updateProjectionMatrix();
     overheadCamera.aspect = aspect; overheadCamera.updateProjectionMatrix();
     thirdPersonCamera.aspect = aspect; thirdPersonCamera.updateProjectionMatrix(); // Added third person
     // Update renderer
     renderer.setSize(window.innerWidth, window.innerHeight);
-    // Update water shader resolution uniform if material exists
-    if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
+    // Update water shader resolution uniform if material exists and is ShaderMaterial
+    if (waterMaterial && waterMaterial.isShaderMaterial && waterMaterial.uniforms.resolution) {
         waterMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     }
 }
