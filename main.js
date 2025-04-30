@@ -9,12 +9,13 @@ import * as dat from 'dat.gui';
 // --- Configuration ---
 const terrainScale = 10;
 const WATER_LEVEL_Y = -18.5;
-const patternScaleFactor = 10.0; // Factor to make patterns smaller (more detailed)
+const patternScaleFactor = 1.0; // Initial pattern scale (can be adjusted via GUI)
 const waterTimeScaleFactor = 1.0; // Default time scale (1.0 = normal speed)
 // Camera
 const chaseCameraOffset = new THREE.Vector3(0, 45, 15);
 const cameraLerpFactor = 0.08;
 const overheadCameraHeight = 600;
+const thirdPersonOffset = new THREE.Vector3(0, 15, 30); // Third-person camera offset
 // Boat Physics
 const boatScale = 2.0;
 const maxSpeed = 15.0 * terrainScale / 10;
@@ -30,8 +31,8 @@ const rowingSpeedFactor = 8;
 const maxRowingAngle = Math.PI / 3; // Increased angle for more dramatic motion
 const baseArmAngle = Math.PI / 6;
 // Lighting
-const dayAmbientIntensity = 0.6;
-const daySunIntensity = 1.0;
+const dayAmbientIntensity = 1;
+const daySunIntensity = 5;
 const nightAmbientIntensity = 0.15;
 const nightSunIntensity = 0.2;
 // FPS Lock
@@ -47,7 +48,7 @@ let isTurningRight = false;
 // General
 let waterCenter = new THREE.Vector3();
 let boat;
-let waterMaterial;
+let waterMaterial; // Will hold the ShaderMaterial or fallback
 let riverModel;
 let boundaryMesh; // For collision detection
 let waterMesh; // Reference to the loaded water mesh
@@ -67,7 +68,8 @@ const guiState = {
     axesHelper: true,
     cameraMode: 'Chase',
     lightingMode: 'Day',
-    timeScale: waterTimeScaleFactor
+    timeScale: waterTimeScaleFactor,
+    patternScale: patternScaleFactor // Add patternScale to GUI
 };
 // FPS Lock
 let timeAccumulator = 0;
@@ -97,13 +99,9 @@ const overheadCamera = setupCamera(cameraParams); // Overhead camera instance
 const thirdPersonCamera = setupCamera(cameraParams); // Third-person camera instance
 let currentCamera = camera; // Start with the CHASE camera active
 
-// Third-person camera offset
-const thirdPersonOffset = new THREE.Vector3(0, 15, 30); // Behind and above the boat
-
 // --- Create Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setAnimationLoop(render);
 renderer.setClearColor(0x87CEEB, 1); // Day default
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
@@ -194,17 +192,32 @@ boat.scale.set(boatScale, boatScale, boatScale);
 scene.add(boat);
 
 // --- Water Plane Shader Definition ---
+// <<< Vertex Shader code using 'uv1' >>>
 const waterVertexShader = `
-  varying vec2 vUv;
+  // Varyings to pass to Fragment Shader
+  varying vec2 vUv;  // Original UV Map (from 'uv' attribute)
+  varying vec2 vUv2; // Still passing as vUv2, but reading from 'uv1' attribute
+
+  // Attributes from Geometry
+  attribute vec2 uv1; // <<< CHANGED: Expect 'uv1' attribute from BufferGeometry >>>
+
   void main() {
+    // Pass original UV map
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }`;
+
+    // <<< CHANGED: Pass second UV map (read from uv1) as vUv2 >>>
+    vUv2 = uv1;
+
+    // Standard position calculation
+    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+  }
+`;
+// Uniforms for the water shader
 const waterUniforms = {
     time: { value: 0.0 },
     resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-    patternScale: { value: patternScaleFactor },
-    timeScale: { value: guiState.timeScale }
+    patternScale: { value: guiState.patternScale }, // Use GUI state
+    timeScale: { value: guiState.timeScale }       // Use GUI state
 };
 // waterMaterial creation moved to Promise.all
 
@@ -222,7 +235,8 @@ const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath( 'https://www.gstatic.com/draco/v1/decoders/' );
 gltfLoader.setDRACOLoader( dracoLoader );
 
-const fragmentShaderPromise = loadShaderFile('assets/water.glsl');
+// <<< Make sure this path is correct >>>
+const fragmentShaderPromise = loadShaderFile('assets/water_fragment.glsl');
 const terrainModelPromise = new Promise((resolve, reject) => {
     gltfLoader.load('assets/river.glb', resolve, undefined, reject);
 });
@@ -236,20 +250,20 @@ const boundaryModelPromise = new Promise((resolve, reject) => {
 // Tree creation function
 function createTree(scale = 1) {
     const tree = new THREE.Object3D();
-    
+
     // Create trunk
     const trunkGeometry = new THREE.CylinderGeometry(0.2 * scale, 0.2 * scale, 1.5 * scale, 8);
     const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
     const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
     trunk.position.y = (1.5 * scale) / 2;
     tree.add(trunk);
-    
+
     // Create foliage layers
     const foliageMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
     const numLayers = 6;
     const baseRadius = 2 * scale;
     const baseHeight = 0.8 * scale;
-    
+
     for (let i = 0; i < numLayers; i++) {
         const layerScale = 1 - (i / numLayers);
         const coneGeometry = new THREE.ConeGeometry(
@@ -261,7 +275,7 @@ function createTree(scale = 1) {
         cone.position.y = 1.2 * scale + (numLayers - i) * (baseHeight * 0.5);
         tree.add(cone);
     }
-    
+
     return tree;
 }
 
@@ -282,25 +296,16 @@ Promise.all([
     // --- Create Water Material ---
     try {
         waterMaterial = new THREE.ShaderMaterial({
-            vertexShader: waterVertexShader,
+            vertexShader: waterVertexShader, // <<< Use the vertex shader code expecting 'uv1' >>>
             fragmentShader: fragmentShaderText,
             uniforms: waterUniforms,
             side: THREE.DoubleSide
-            // <<< REMOVED 'transparent: true' and 'depthWrite: false' >>>
-            // Use defaults for opaque rendering (transparent: false, depthWrite: true)
         });
         console.log("Custom water material created (Opaque).");
-        // --- DEBUGGING TIP ---
-        // If water still doesn't show, temporarily uncomment the next line
-        // to rule out shader issues vs geometry/positioning issues:
-        // waterMaterial = new THREE.MeshBasicMaterial({ color: 0x00FFFF, wireframe: true, side: THREE.DoubleSide });
-        // console.log("!!! DEBUG: Using Basic Material for Water !!!");
-        // --- END DEBUGGING TIP ---
 
     } catch (error) {
         console.error("Error creating custom water material:", error);
         console.log("Falling back to basic water material.");
-        // Fallback if shader compilation still fails for other reasons
         waterMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF, side: THREE.DoubleSide });
     }
 
@@ -320,11 +325,23 @@ Promise.all([
         waterMeshGltf.scene.traverse((child) => {
             if (child.isMesh) {
                 waterMesh = child;
+                // <<< UPDATED CHECK: Look for 'uv1' specifically >>>
+                if (!waterMesh.geometry.attributes.uv1) {
+                    console.warn("!!! Loaded water mesh geometry does NOT have 'uv1' attribute. Shader might fail or use 'uv'. Ensure model is exported correctly with 2+ UV maps. !!!");
+                    // Optional: Could still duplicate uv as uv1 if needed as a last resort
+                    // if (waterMesh.geometry.attributes.uv) {
+                    //    waterMesh.geometry.setAttribute('uv1', waterMesh.geometry.attributes.uv.clone());
+                    // }
+                } else {
+                    console.log("Water mesh geometry has 'uv1' attribute.");
+                }
+                // Log all attributes for debugging
+                console.log("Water Mesh Attributes:", waterMesh.geometry.attributes);
             }
         });
         if (!waterMesh) throw new Error("No mesh found in water_mesh.glb");
 
-        waterMesh.material = waterMaterial; // Apply the potentially fixed material
+        waterMesh.material = waterMaterial; // Apply the shader material
         waterMesh.name = "water";
         waterMesh.scale.copy(riverModel.scale);
         waterMesh.position.set(waterCenter.x, WATER_LEVEL_Y, waterCenter.z);
@@ -335,7 +352,8 @@ Promise.all([
         console.error("Error processing water_mesh.glb:", error);
         console.log("Falling back to PlaneGeometry for water.");
         const fallbackWaterGeometry = new THREE.PlaneGeometry(size.x, size.z, 100, 100);
-        // Make fallback opaque too if the main shader is meant to be
+        // Generate uv1 for the fallback plane (duplicating uv)
+        fallbackWaterGeometry.setAttribute('uv1', fallbackWaterGeometry.attributes.uv.clone());
         const fallbackMaterial = waterMaterial.isShaderMaterial ? waterMaterial : new THREE.MeshBasicMaterial({ color: 0x0000FF, side: THREE.DoubleSide });
         waterMesh = new THREE.Mesh(fallbackWaterGeometry, fallbackMaterial);
         waterMesh.rotation.x = -Math.PI / 2;
@@ -353,7 +371,7 @@ Promise.all([
         boundaryModel.traverse((child) => {
             if (child.isMesh) {
                 boundaryMesh = child;
-                boundaryMesh.visible = true; // <<< Hide the boundary mesh
+                boundaryMesh.visible = false; // <<< Hide the boundary mesh
             }
         });
         if (!boundaryMesh) throw new Error("No mesh found in boundary_mesh.glb");
@@ -368,7 +386,6 @@ Promise.all([
 
     // --- Final Setup ---
     // Set Initial Boat Position
-    // Using 0.25 factor. NOTE: This might need adjustment based on your river model's layout.
     const startZ = waterCenter.z + size.z * 0.25;
     boat.position.set(waterCenter.x, WATER_LEVEL_Y, startZ);
     console.log(`Boat initial position set to: ${boat.position.x.toFixed(2)}, ${boat.position.y.toFixed(2)}, ${boat.position.z.toFixed(2)}`);
@@ -382,6 +399,10 @@ Promise.all([
     overheadCamera.lookAt(waterCenter.x, WATER_LEVEL_Y, waterCenter.z);
     overheadCamera.updateProjectionMatrix();
 
+    // Setup Third Person Camera initial position
+    thirdPersonCamera.position.copy(boat.position).add(thirdPersonOffset);
+    thirdPersonCamera.lookAt(boat.position);
+
     // Update light positions/targets
     sunLight.position.set(waterCenter.x + size.x * 0.5, size.y > 0 ? size.y * 2 : 100, waterCenter.z - size.z * 0.3);
     sunLight.target.position.copy(waterCenter);
@@ -389,12 +410,11 @@ Promise.all([
     if (!sunLight.target.parent) scene.add(sunLight.target);
 
     // After terrain is loaded and water center is calculated, add trees
-    const numTrees = 100; // Increased from 30 to 100
+    const numTrees = 100;
     const treeScale = terrainScale * 0.15;
-    const minDistance = 10 * terrainScale; // Reduced minimum distance between trees
+    const minDistance = 10 * terrainScale;
     const placedTrees = [];
-    
-    // Function to check if position is too close to other trees
+
     function isTooClose(position, trees) {
         return trees.some(tree => {
             const dx = tree.position.x - position.x;
@@ -402,36 +422,32 @@ Promise.all([
             return Math.sqrt(dx * dx + dz * dz) < minDistance;
         });
     }
-    
-    // Place trees randomly around the terrain
+
     for (let i = 0; i < numTrees; i++) {
-        const tree = createTree(treeScale * (0.8 + Math.random() * 0.4)); // Random size variation
+        const tree = createTree(treeScale * (0.8 + Math.random() * 0.4));
         let position;
         let attempts = 0;
-        const maxAttempts = 100; // Increased max attempts to find valid positions
-        
-        // Try to find a valid position
+        const maxAttempts = 100;
+
         do {
             position = new THREE.Vector3(
-                waterCenter.x + (Math.random() - 0.5) * size.x * 0.9, // Increased spread
+                waterCenter.x + (Math.random() - 0.5) * size.x * 0.9,
                 WATER_LEVEL_Y,
-                waterCenter.z + (Math.random() - 0.5) * size.z * 0.9  // Increased spread
+                waterCenter.z + (Math.random() - 0.5) * size.z * 0.9
             );
             attempts++;
         } while (attempts < maxAttempts && isTooClose(position, placedTrees));
-        
+
         if (attempts < maxAttempts) {
-            // Cast ray down to find terrain height
             const raycaster = new THREE.Raycaster();
             raycaster.set(
                 new THREE.Vector3(position.x, position.y + 100, position.z),
                 new THREE.Vector3(0, -1, 0)
             );
             const intersects = raycaster.intersectObject(riverModel, true);
-            
-            if (intersects.length > 0 && intersects[0].point.y > WATER_LEVEL_Y + 0.5) { // Reduced height requirement
+
+            if (intersects.length > 0 && intersects[0].point.y > WATER_LEVEL_Y + 0.5) {
                 tree.position.copy(intersects[0].point);
-                // Add slight random rotation for variety
                 tree.rotation.y = Math.random() * Math.PI * 2;
                 scene.add(tree);
                 placedTrees.push(tree);
@@ -441,7 +457,6 @@ Promise.all([
 
 }).catch(error => {
     console.error("Failed to load one or more assets:", error);
-    // Fallback logic remains the same...
     if (!scene.getObjectByName("water") && !scene.getObjectByName("water_fallback_plane") && !scene.getObjectByName("water_load_error_fallback")) {
          const fallbackMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF, side: THREE.DoubleSide });
          const fallbackGeo = new THREE.PlaneGeometry(200, 200);
@@ -463,17 +478,24 @@ Promise.all([
 var ambLight = new THREE.AmbientLight(0xffffff, dayAmbientIntensity);
 scene.add(ambLight);
 var sunLight = new THREE.DirectionalLight(0xffffff, daySunIntensity);
+sunLight.castShadow = true; // Enable shadows for sunlight
 scene.add(sunLight);
+
+// Configure shadow properties (optional, adjust for performance/quality)
+sunLight.shadow.mapSize.width = 1024;
+sunLight.shadow.mapSize.height = 1024;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 1500; // Adjust based on scene size
 
 // -----------------------------
 // dat.GUI Interface
 // -----------------------------
 const gui = new dat.GUI();
 
-gui.add(guiState, 'cameraMode', ['Chase', 'Overhead', 'Third Person'])
+gui.add(guiState, 'cameraMode', ['Chase', 'Overhead', 'Third Person']) // Added Third Person
     .name('Camera Mode')
     .onChange((value) => {
-        currentCamera = (value === 'Overhead') ? overheadCamera : 
+        currentCamera = (value === 'Overhead') ? overheadCamera :
                        (value === 'Third Person') ? thirdPersonCamera : camera;
         currentCamera.aspect = window.innerWidth / window.innerHeight;
         currentCamera.updateProjectionMatrix();
@@ -496,15 +518,23 @@ gui.add(guiState, 'lightingMode', ['Day', 'Night'])
 gui.add(guiState, 'timeScale', 0.0, 5.0, 0.05)
    .name('Water Speed')
    .onChange((value) => {
-       if (waterMaterial) {
+       if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
            waterMaterial.uniforms.timeScale.value = value;
+       }
+   });
+
+gui.add(guiState, 'patternScale', 0.1, 10.0, 0.1) // Added patternScale GUI
+   .name('Water Pattern Scale')
+   .onChange((value) => {
+       if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
+           waterMaterial.uniforms.patternScale.value = value;
        }
    });
 
 gui.add(guiState, 'axesHelper').name('Show Axes').onChange((v) => ah.visible = v);
 
 // --- Render Loop Variables ---
-const clock = new THREE.Clock();
+const clock = new THREE.Clock(); // <<< MOVED clock definition HERE, before render function >>>
 const boatWorldPosition = new THREE.Vector3();
 const boatWorldQuaternion = new THREE.Quaternion();
 const desiredCamPos = new THREE.Vector3();
@@ -515,8 +545,8 @@ const collisionNormal = new THREE.Vector3();
 /**
  * Render loop: Handles updates and rendering
  */
-function render() {
-    const deltaTime = Math.min(clock.getDelta(), 0.05);
+function render() { // <<< render function definition comes AFTER clock definition >>>
+    const deltaTime = Math.min(clock.getDelta(), 0.05); // Should now work
     timeAccumulator += deltaTime;
 
     // Use fixed timestep loop
@@ -524,11 +554,14 @@ function render() {
         const effectiveDeltaTime = targetFrameDuration;
         timeAccumulator -= targetFrameDuration;
 
-        const elapsedTime = clock.getElapsedTime();
+        const elapsedTime = clock.getElapsedTime(); // Should now work
 
         // --- Update Logic ---
-        if (waterMaterial) {
+        if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
             waterMaterial.uniforms.time.value = elapsedTime;
+            // Ensure uniforms match GUI state (in case changed externally)
+            waterMaterial.uniforms.timeScale.value = guiState.timeScale;
+            waterMaterial.uniforms.patternScale.value = guiState.patternScale;
         }
 
         // Boat Physics Update
@@ -584,16 +617,16 @@ function render() {
             if (leftUpperArmRef && rightUpperArmRef && leftOarRef && rightOarRef) {
                 const animIntensity = Math.min(1, currentSpeed / (maxSpeed * 0.75));
                 const time = elapsedTime * rowingSpeedFactor;
-                
+
                 // Create a more natural rowing motion with proper pull and dip
                 const pullPhase = Math.sin(time);
                 const dipPhase = Math.sin(time + Math.PI/2);
-                
+
                 // Calculate angles based on phases
                 const rowingAngle = (pullPhase * 0.5 + 0.5) * maxRowingAngle * animIntensity;
                 const forwardAngle = dipPhase * (Math.PI / 4) * animIntensity;
                 const bladeAngle = Math.abs(dipPhase) * 0.5 * animIntensity;
-                
+
                 // Left arm and oar
                 leftUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
                 leftUpperArmRef.rotation.z = Math.PI / 6 - forwardAngle;
@@ -603,7 +636,7 @@ function render() {
                 leftOarRef.rotation.y = -bladeAngle;
                 // Adjust oar position to follow hand
                 leftOarRef.position.y = 0.6 * 1.8 * 0.7 - 0.8 + Math.sin(time) * 0.1 * animIntensity;
-                
+
                 // Right arm and oar
                 rightUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
                 rightUpperArmRef.rotation.z = -Math.PI / 6 + forwardAngle;
@@ -661,6 +694,10 @@ function render() {
     renderer.render(scene, currentCamera);
 }
 
+// <<< MOVED setAnimationLoop call AFTER clock is defined and render is defined >>>
+renderer.setAnimationLoop(render);
+
+
 // --- Keyboard Event Listeners ---
 document.addEventListener("keydown", (event) => {
     if (event.target.tagName === 'INPUT') return;
@@ -694,11 +731,11 @@ function onWindowResize() {
     // Update cameras
     camera.aspect = aspect; camera.updateProjectionMatrix();
     overheadCamera.aspect = aspect; overheadCamera.updateProjectionMatrix();
-    thirdPersonCamera.aspect = aspect; thirdPersonCamera.updateProjectionMatrix();
+    thirdPersonCamera.aspect = aspect; thirdPersonCamera.updateProjectionMatrix(); // Added third person
     // Update renderer
     renderer.setSize(window.innerWidth, window.innerHeight);
     // Update water shader resolution uniform if material exists
-    if (waterMaterial) {
+    if (waterMaterial && waterMaterial.isShaderMaterial) { // Check if shader material
         waterMaterial.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
     }
 }
