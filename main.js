@@ -94,7 +94,11 @@ const scene = new THREE.Scene();
 // --- Create Cameras ---
 const camera = setupCamera(cameraParams); // Main chase camera
 const overheadCamera = setupCamera(cameraParams); // Overhead camera instance
+const thirdPersonCamera = setupCamera(cameraParams); // Third-person camera instance
 let currentCamera = camera; // Start with the CHASE camera active
+
+// Third-person camera offset
+const thirdPersonOffset = new THREE.Vector3(0, 15, 30); // Behind and above the boat
 
 // --- Create Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -466,10 +470,11 @@ scene.add(sunLight);
 // -----------------------------
 const gui = new dat.GUI();
 
-gui.add(guiState, 'cameraMode', ['Chase', 'Overhead'])
+gui.add(guiState, 'cameraMode', ['Chase', 'Overhead', 'Third Person'])
     .name('Camera Mode')
     .onChange((value) => {
-        currentCamera = (value === 'Overhead') ? overheadCamera : camera;
+        currentCamera = (value === 'Overhead') ? overheadCamera : 
+                       (value === 'Third Person') ? thirdPersonCamera : camera;
         currentCamera.aspect = window.innerWidth / window.innerHeight;
         currentCamera.updateProjectionMatrix();
     });
@@ -634,6 +639,22 @@ function render() {
             camera.lookAt(lookAtTarget);
         }
 
+        // Update Third-person Camera
+        if (currentCamera === thirdPersonCamera && boat) {
+            boat.getWorldPosition(boatWorldPosition);
+            boat.getWorldQuaternion(boatWorldQuaternion);
+
+            // Calculate camera position relative to boat with rotation
+            desiredCamPos.copy(thirdPersonOffset).applyQuaternion(boatWorldQuaternion).add(boatWorldPosition);
+
+            // Calculate look-at target slightly ahead of the boat
+            const lookAtTarget = new THREE.Vector3(0, 0, -10).applyQuaternion(boatWorldQuaternion).add(boatWorldPosition);
+
+            const lerpSpeed = cameraLerpFactor;
+            thirdPersonCamera.position.lerp(desiredCamPos, lerpSpeed);
+            thirdPersonCamera.lookAt(lookAtTarget);
+        }
+
     } // End fixed timestep loop
 
     // Render Scene
@@ -673,6 +694,7 @@ function onWindowResize() {
     // Update cameras
     camera.aspect = aspect; camera.updateProjectionMatrix();
     overheadCamera.aspect = aspect; overheadCamera.updateProjectionMatrix();
+    thirdPersonCamera.aspect = aspect; thirdPersonCamera.updateProjectionMatrix();
     // Update renderer
     renderer.setSize(window.innerWidth, window.innerHeight);
     // Update water shader resolution uniform if material exists
