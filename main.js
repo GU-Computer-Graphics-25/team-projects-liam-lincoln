@@ -5,21 +5,21 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 // Import dat.GUI
 import * as dat from 'dat.gui';
+// Import Sky addon <<< ADDED Sky Import >>>
+import { Sky } from 'three/addons/objects/Sky.js';
 
 // --- Configuration ---
 const terrainScale = 10;
-const WATER_LEVEL_Y = -17.0;
+const WATER_LEVEL_Y = -17.0; // <<< Using level from Sky/Current version >>>
 const patternScaleFactor = 1.0; // Initial pattern scale
 const waterTimeScaleFactor = 1.2; // <<< SET FIXED WATER ANIMATION SPEED >>>
 const waterAlpha = 0.85; // <<< Set desired base water transparency (0.0 to 1.0) >>>
-// const waterColor = 0x336699; // No longer needed for ShaderMaterial
 // Camera
 const chaseCameraOffset = new THREE.Vector3(0, 45, 15); // Still used for the 'Overhead' view logic
 const cameraLerpFactor = 0.08;
-// const overheadCameraHeight = 600; // Removed overhead camera concept, reused 'camera'
 const thirdPersonOffset = new THREE.Vector3(0, 15, 30); // Third-person camera offset
 // Boat Physics
-const boatScale = 4.0; // <<< MODIFIED: Doubled boat size >>>
+const boatScale = 2.0; // <<< REVERTED Boat scale back to original size >>>
 const maxSpeed = 15.0 * terrainScale / 10;
 const accelerationRate = 10.0 * terrainScale / 10;
 const decelerationRate = 8.0 * terrainScale / 10;
@@ -32,20 +32,28 @@ const collisionNudge = 0.01; // Tiny push away from wall to prevent sticking
 const rowingSpeedFactor = 8;
 const maxRowingAngle = Math.PI / 3; // Increased angle for more dramatic motion
 const baseArmAngle = Math.PI / 6;
-// Lighting (Only Day Mode now)
-const dayAmbientIntensity = 0.8; // <<< MODIFIED: Increased ambient light >>>
-const daySunIntensity = 2.0;    // <<< MODIFIED: Increased sun intensity >>>
-// const nightAmbientIntensity = 0.15; // Removed night mode
-// const nightSunIntensity = 0.2;   // Removed night mode
+// Lighting (Adjusted for Sky)
+const dayAmbientIntensity = 0.7; // <<< Base ambient light, sky provides main lighting (Slightly Increased) >>>
+const daySunIntensity = 1.2;    // <<< Intensity for the DirectionalLight matching the Sky's sun (Slightly Increased) >>>
 // Fog
-const fogColor = 0xa3dfff; // Low saturation bright blue (Fog blends *towards* this color)
-const fogNear = 0 * terrainScale;  // <<< DECREASED fogNear for stronger effect >>>
-const fogFar = 80 * terrainScale; // <<< DECREASED fogFar for stronger effect >>>
+const fogColor = 0xacdbfc; // Low saturation bright blue (Fog blends *towards* this color) (from Sky snippet)
+const fogNear = 0 * terrainScale;
+const fogFar = 120 * terrainScale; // <<< INCREASED Fog Far Distance >>>
 // FPS Lock
 const targetFrameRate = 30;
 const targetFrameDuration = 1 / targetFrameRate; // Seconds
-// Sky Color
-const skyColor = 0x87CEEB; // <<< ADDED distinct sky color >>>
+// Horizon/Background Color (Matches Fog) <<< ADDED from Sky snippet >>>
+const horizonColor = fogColor; // Used for scene background
+// <<< Hardcoded Sky Values from Sky snippet >>>
+const skySettings = {
+   turbidity: 0.1,
+   rayleigh: 0.15,
+   mieCoefficient: 0.1,
+   mieDirectionalG: 0.953,
+   elevation: 80, // degrees (Adjusted slightly as requested, still high)
+   azimuth: 0, // degrees
+   exposure: 1.0 // Initial exposure
+};
 
 // --- State Variables ---
 // Boat
@@ -60,6 +68,8 @@ let waterMaterial; // Will hold the ShaderMaterial or fallback
 let riverModel;
 let boundaryMesh; // For collision detection
 let waterMesh; // Reference to the loaded water mesh
+let sky; // <<< ADDED Reference to the Sky object >>>
+let sun; // <<< ADDED Vector3 representing sun direction for Sky and DirectionalLight >>>
 // Animation Refs
 let leftUpperArmRef, rightUpperArmRef;
 let leftOarRef, rightOarRef;
@@ -73,19 +83,15 @@ const rayCheckPoints = [
 ];
 // GUI State
 const guiState = {
-    // axesHelper: true, // Removed axes helper
-    cameraMode: 'Overhead', // <<< CHANGED default label to match GUI >>>
-    // lightingMode: 'Day', // Removed lighting mode toggle (always Day)
-    // timeScale: waterTimeScaleFactor, // Removed from GUI control
-    // patternScale: patternScaleFactor, // Removed from GUI control
-    // waterAlpha: waterAlpha // Removed from GUI control
+    cameraMode: 'Overhead', // Only camera mode control remains
 };
 // FPS Lock
 let timeAccumulator = 0;
 
 // Define camera parameters (placeholders, real values set after load)
 var cameraParams = {
-    near: 0.1, far: fogFar * 1.1, fov: 75, aspectRatio: window.innerWidth / window.innerHeight, // Adjusted far plane for new fogFar
+    near: 0.1, far: 500000, // <<< Increased Far plane significantly for large sky (from Sky snippet) >>>
+    fov: 75, aspectRatio: window.innerWidth / window.innerHeight,
     atX: 0, atY: WATER_LEVEL_Y, atZ: 0, eyeX: 0, eyeY: 50, eyeZ: 50,
     upX: 0, upY: 1, upZ: 0
 };
@@ -101,29 +107,42 @@ function setupCamera(cameraParameters) {
 
 // Create the scene
 const scene = new THREE.Scene();
-// Add Fog to the scene <<< Fog settings remain >>>
-scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+// <<< SET Scene background color - fog will blend towards this (from Sky snippet) >>>
+scene.background = new THREE.Color( horizonColor );
+// Add Fog to the scene (using updated constants)
+scene.fog = new THREE.Fog(fogColor, fogNear, fogFar); // Using updated fogFar
 
 // --- Create Cameras ---
-const camera = setupCamera(cameraParams); // Main camera (now labeled 'Overhead')
-// const overheadCamera = setupCamera(cameraParams); // Removed overhead camera instance
-const thirdPersonCamera = setupCamera(cameraParams); // Third-person camera instance
-let currentCamera = camera; // Start with the 'Overhead' (formerly chase) camera active
+const camera = setupCamera(cameraParams); // Uses updated cameraParams ('Overhead' view is default 'camera')
+const thirdPersonCamera = setupCamera(cameraParams); // Uses updated cameraParams
+let currentCamera = camera; // Start with 'Overhead' view
 
 // --- Create Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(skyColor, 1); // <<< SET CLEAR COLOR TO SKY BLUE >>>
+// <<< REMOVED setClearColor, using scene.background instead (from Sky snippet) >>>
 renderer.shadowMap.enabled = true;
+// <<< ADDED Tone Mapping (from Sky snippet) >>>
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = skySettings.exposure; // Set initial exposure
 document.body.appendChild(renderer.domElement);
+
+// --- Sky Setup (from Sky snippet) ---
+sky = new Sky();
+sky.scale.setScalar( 450000 ); // Keep sky dome large
+scene.add( sky );
+sky.renderOrder = -1; // Render sky early
+
+// Sun direction vector (will be updated by updateSkyAndSun)
+sun = new THREE.Vector3();
 
 // --- Axes Helper ---
 // var ah = new THREE.AxesHelper(50 * terrainScale); // Removed axes helper
 // scene.add(ah); // Removed axes helper
 
 // --- Boat Geometry Function (BufferGeometry version) ---
+// [2025-02-28] Keep all the comments that were there in the original files.
 function createRaftBufferGeometry() {
-    // [2025-02-28] Keep all the comments that were there in the original files.
     const geom = new THREE.BufferGeometry();
     const bottomVecs = [ new THREE.Vector3(-1.5, 0, 1), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1.5, 0, 1), new THREE.Vector3(-2, 0, 0), new THREE.Vector3(0, -0.22, 0), new THREE.Vector3(2, 0, 0), new THREE.Vector3(-1.5, 0, -1), new THREE.Vector3(0, 0, -1), new THREE.Vector3(1.5, 0, -1) ];
     const topVecs = bottomVecs.map(v => new THREE.Vector3(v.x, v.y + 0.23, v.z));
@@ -144,7 +163,6 @@ function createRaftBufferGeometry() {
 // -----------------------------
 // Add Boat Object
 // -----------------------------
-// (Boat creation code remains the same, scaling applied later)
 // [2025-02-28] Keep all the comments that were there in the original files.
 boat = new THREE.Object3D(); boat.name = "boat";
 const raftSideMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, metalness: 0.2, roughness: 0.8, side: THREE.DoubleSide });
@@ -162,52 +180,52 @@ const armGeomUpper = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8); const armGeom
 leftUpperArmRef = new THREE.Object3D(); leftUpperArmRef.name = "leftUpperArm"; const leftUpperArmMesh = new THREE.Mesh(armGeomUpper, bodyMaterial); leftUpperArmMesh.position.y = -0.4; leftUpperArmRef.add(leftUpperArmMesh); const leftLowerArm = new THREE.Object3D(); leftLowerArm.name = "leftLowerArm"; const leftLowerArmMesh = new THREE.Mesh(armGeomLower, bodyMaterial); leftLowerArmMesh.position.y = -0.3; leftLowerArm.add(leftLowerArmMesh); leftLowerArm.position.set(0, -0.8, 0); leftUpperArmRef.add(leftLowerArm); leftUpperArmRef.position.set(0.7, 0.6 * 1.8 * 0.7, 0); leftUpperArmRef.rotation.z = -Math.PI / 6; leftUpperArmRef.rotation.x = baseArmAngle; person.add(leftUpperArmRef);
 rightUpperArmRef = new THREE.Object3D(); rightUpperArmRef.name = "rightUpperArm"; const rightUpperArmMesh = new THREE.Mesh(armGeomUpper, bodyMaterial); rightUpperArmMesh.position.y = -0.4; rightUpperArmRef.add(rightUpperArmMesh); const rightLowerArm = new THREE.Object3D(); rightLowerArm.name = "rightLowerArm"; const rightLowerArmMesh = new THREE.Mesh(armGeomLower, bodyMaterial); rightLowerArmMesh.position.y = -0.3; rightLowerArm.add(rightLowerArmMesh); rightLowerArm.position.set(0, -0.8, 0); rightUpperArmRef.add(rightLowerArm); rightUpperArmRef.position.set(-0.7, 0.6 * 1.8 * 0.7, 0); rightUpperArmRef.rotation.z = Math.PI / 6; rightUpperArmRef.rotation.x = baseArmAngle; person.add(rightUpperArmRef);
 
-// Create oars
+// <<< Oar Creation using logic from Oar/Arm snippet >>>
 const oarGeometry = new THREE.CylinderGeometry(0.08, 0.08, 3.0, 8);
 const oarMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
 const oarBladeGeometry = new THREE.BoxGeometry(0.15, 0.4, 0.8);
 const oarBladeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
 
+// <<< ADJUSTED Oar Y Position >>>
+const oarPivotY = 0.6 * 1.8 * 0.7 - 0.6; // Adjusted Y position (higher than before)
+
 // Left oar
-leftOarRef = new THREE.Object3D();
+leftOarRef = new THREE.Object3D(); // This is the pivot point
 const leftOar = new THREE.Mesh(oarGeometry, oarMaterial);
-leftOar.position.y = -1.5;
+leftOar.position.y = -1.5; // Center the oar shaft on the pivot
 leftOarRef.add(leftOar);
 const leftBlade = new THREE.Mesh(oarBladeGeometry, oarBladeMaterial);
-leftBlade.position.set(0, -1.5, 0);
-leftBlade.rotation.x = Math.PI / 2;
+leftBlade.position.set(0, -1.5, 0); // Position blade relative to shaft center
+leftBlade.rotation.x = Math.PI / 2; // Rotate blade flat
 leftOarRef.add(leftBlade);
-// Position oar at hand level
-leftOarRef.position.set(0.7, 0.6 * 1.8 * 0.7 - 0.8, 0); // Moved down to hand level
-leftOarRef.rotation.z = -Math.PI / 6;
-leftOarRef.rotation.x = baseArmAngle;
-// person.add(leftOarRef); // <<< Oars are added directly to boat now below >>>
+// Position oar pivot relative to person/arm using adjusted Y
+leftOarRef.position.set(0.7, oarPivotY, 0); // Position near hand level with adjusted Y
+leftOarRef.rotation.z = -Math.PI / 6; // Initial outward angle
+leftOarRef.rotation.x = baseArmAngle; // Initial downward angle
+person.add(leftOarRef); // Add oar pivot to person
 
 // Right oar
-rightOarRef = new THREE.Object3D();
+rightOarRef = new THREE.Object3D(); // This is the pivot point
 const rightOar = new THREE.Mesh(oarGeometry, oarMaterial);
-rightOar.position.y = -1.5;
+rightOar.position.y = -1.5; // Center the oar shaft on the pivot
 rightOarRef.add(rightOar);
 const rightBlade = new THREE.Mesh(oarBladeGeometry, oarBladeMaterial);
-rightBlade.position.set(0, -1.5, 0);
-rightBlade.rotation.x = Math.PI / 2;
+rightBlade.position.set(0, -1.5, 0); // Position blade relative to shaft center
+rightBlade.rotation.x = Math.PI / 2; // Rotate blade flat
 rightOarRef.add(rightBlade);
-// Position oar at hand level
-rightOarRef.position.set(-0.7, 0.6 * 1.8 * 0.7 - 0.8, 0); // Moved down to hand level
-rightOarRef.rotation.z = Math.PI / 6;
-rightOarRef.rotation.x = baseArmAngle;
-// person.add(rightOarRef); // <<< Oars are added directly to boat now below >>>
+// Position oar pivot relative to person/arm using adjusted Y
+rightOarRef.position.set(-0.7, oarPivotY, 0); // Position near hand level with adjusted Y
+rightOarRef.rotation.z = Math.PI / 6; // Initial outward angle
+rightOarRef.rotation.x = baseArmAngle; // Initial downward angle
+person.add(rightOarRef); // Add oar pivot to person
 
 boat.add(person);
-// <<< Add oars directly to the boat object, not the person, so they scale with the boat correctly >>>
-boat.add(leftOarRef);
-boat.add(rightOarRef);
-// <<< Apply the final boat scale here >>>
+// <<< Apply the final boat scale here (Reverted to 2.0) >>>
 boat.scale.set(boatScale, boatScale, boatScale);
 scene.add(boat);
 
 // --- Water Plane Shader Definition ---
-// <<< Vertex shader code using 'uv1' >>>
+// [2025-02-28] Keep all the comments that were there in the original files.
 const waterVertexShader = `
   varying vec2 vUv;  // Original UV Map (from 'uv' attribute)
   varying vec2 vUv2; // Still passing as vUv2, but reading from 'uv1' attribute
@@ -219,16 +237,16 @@ const waterVertexShader = `
     gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
   }
 `;
-// <<< Uniforms for the ShaderMaterial - USING FIXED VALUES >>>
 const waterUniforms = {
     time: { value: 0.0 },
     resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
     patternScale: { value: patternScaleFactor }, // Use fixed constant
     timeScale: { value: waterTimeScaleFactor }, // Use fixed constant (1.2)
-    uAlpha: { value: waterAlpha }                // Use fixed constant
+    uAlpha: { value: waterAlpha }                // Use fixed constant for transparency
 };
 
 // --- Async Asset Loading ---
+// [2025-02-28] Keep all the comments that were there in the original files.
 async function loadShaderFile(url) {
     const response = await fetch(url);
     if (!response.ok) {
@@ -270,6 +288,26 @@ const treeInstancesPromise = new Promise((resolve, reject) => {
 // --- REMOVED Tree creation function ---
 // function createTree(scale = 1) { ... }
 
+// -----------------------------
+// Add Lights to the Scene (Setup before Promise.all)
+// -----------------------------
+var ambLight = new THREE.AmbientLight(0xffffff, dayAmbientIntensity); // Soft ambient fill light (using constant from Sky snippet)
+scene.add(ambLight);
+// Directional light to simulate the sun (position/target updated by updateSkyAndSun)
+var sunLight = new THREE.DirectionalLight(0xffffff, daySunIntensity); // Using constant from Sky snippet
+sunLight.castShadow = true;
+scene.add(sunLight);
+scene.add(sunLight.target); // Add target to scene explicitly
+
+// Configure shadow properties (using settings from Sky snippet)
+sunLight.shadow.mapSize.width = 2048; // Higher res shadows
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 50; // Adjust near plane based on scene scale
+sunLight.shadow.camera.far = fogFar * 1.5; // Adjusted far plane based on NEW fogFar
+// Shadow camera bounds will be set later based on terrain size
+sunLight.shadow.bias = -0.0005; // Adjust shadow bias to prevent artifacts
+
+
 // Wait for ALL assets to load
 Promise.all([
     fragmentShaderPromise, // <<< Load fragment shader text >>>
@@ -295,20 +333,18 @@ Promise.all([
             fragmentShader: fragmentShaderText, // Use loaded fragment shader
             uniforms: waterUniforms,             // Use defined uniforms (with fixed values)
             side: THREE.DoubleSide,
-            transparent: true,                   // <<< ENABLE TRANSPARENCY >>>
-            // fog: true // <<< REMOVED fog: true from ShaderMaterial to prevent error >>>
+            transparent: true,                   // <<< KEEP TRANSPARENT water >>>
+            fog: false                           // <<< Rely on scene fog (from Sky snippet) >>>
         });
         console.log("Custom ShaderMaterial created for water (Transparent).");
 
     } catch (error) {
         console.error("Error creating ShaderMaterial:", error);
         console.log("Falling back to basic water material.");
-        waterMaterial = new THREE.MeshBasicMaterial({ // Fallback is Basic
-            color: 0x0000FF, // Fallback color if shader fails
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: waterAlpha, // Use fixed constant
-            fog: true // <<< Keep fog enabled on fallback material >>>
+        // Fallback keeps transparency
+        waterMaterial = new THREE.MeshBasicMaterial({
+            color: 0x0000FF, side: THREE.DoubleSide, transparent: true,
+            opacity: waterAlpha, fog: true // Fallback uses scene fog
         });
     }
 
@@ -321,7 +357,15 @@ Promise.all([
     console.log(`Terrain dimensions (scaled): X=${size.x.toFixed(2)}, Y=${size.y.toFixed(2)}, Z=${size.z.toFixed(2)}`);
     console.log(`Terrain center: X=${waterCenter.x.toFixed(2)}, Y=${waterCenter.y.toFixed(2)}, Z=${waterCenter.z.toFixed(2)}`);
     console.log(`Using fixed Water Level Y: ${WATER_LEVEL_Y}`);
+    // Apply shadows and fog to terrain
+    riverModel.traverse(child => {
+        if (child.isMesh) {
+            child.receiveShadow = true; // Terrain receives shadows
+            if (child.material) child.material.fog = true; // Terrain affected by fog
+        }
+    });
     scene.add(riverModel);
+
 
     // --- Process and Add Water Mesh ---
     try {
@@ -335,7 +379,6 @@ Promise.all([
                 } else if (!waterMesh.geometry.attributes.uv1) {
                      console.error("Water mesh geometry missing 'uv' and 'uv1' attributes!");
                  }
-                 // console.log("Water Mesh Attributes:", waterMesh.geometry.attributes); // Less verbose logging
              }
          });
          if (!waterMesh) throw new Error("No mesh found in water_mesh.glb");
@@ -344,7 +387,7 @@ Promise.all([
          waterMesh.name = "water";
          waterMesh.scale.copy(riverModel.scale); // Match terrain scale
          waterMesh.position.set(waterCenter.x, WATER_LEVEL_Y, waterCenter.z); // Position at water level, centered with terrain
-         // waterMesh.renderOrder = 1; // Optional: Adjust render order for transparency
+         waterMesh.renderOrder = 1; // Render after opaque objects if transparent
          scene.add(waterMesh);
          console.log("Loaded water mesh added to scene.");
 
@@ -354,18 +397,15 @@ Promise.all([
          const fallbackWaterGeometry = new THREE.PlaneGeometry(size.x, size.z, 100, 100); // Use terrain size
          // Generate uv1 for the fallback plane (duplicating uv)
          fallbackWaterGeometry.setAttribute('uv1', fallbackWaterGeometry.attributes.uv.clone());
-         const fallbackMaterial = waterMaterial.isShaderMaterial ? waterMaterial : new THREE.MeshBasicMaterial({ // Use Basic fallback
-             color: 0x0000FF,
-             side: THREE.DoubleSide,
-             transparent: true,
-             opacity: waterAlpha, // Use fixed constant
-             fog: true // <<< Enable fog on fallback plane material >>>
+         const fallbackMaterial = waterMaterial.isShaderMaterial ? waterMaterial : new THREE.MeshBasicMaterial({
+             color: 0x0000FF, side: THREE.DoubleSide, transparent: true,
+             opacity: waterAlpha, fog: true
          });
          waterMesh = new THREE.Mesh(fallbackWaterGeometry, fallbackMaterial);
          waterMesh.rotation.x = -Math.PI / 2;
          waterMesh.position.set(waterCenter.x, WATER_LEVEL_Y, waterCenter.z); // Position at water level, centered with terrain
          waterMesh.name = "water_fallback_plane";
-         // fallbackMesh.renderOrder = 1; // Also set renderOrder for fallback if using
+         waterMesh.renderOrder = 1; // Render after opaque
          scene.add(waterMesh);
      }
 
@@ -378,7 +418,7 @@ Promise.all([
          boundaryModel.traverse((child) => {
              if (child.isMesh) {
                  boundaryMesh = child;
-                 boundaryMesh.visible = false; // <<< Hide the boundary mesh
+                 boundaryMesh.visible = false; // <<< Hide the boundary mesh >>>
                  // <<< IMPORTANT: Ensure boundary mesh matrix is updated for raycasting >>>
                  boundaryMesh.updateMatrixWorld(true); // Update world matrix once after positioning/scaling
              }
@@ -414,11 +454,13 @@ Promise.all([
             scene.add(modelScene); // Add the whole group (Empty containing InstancedMeshes)
 
             let instancedMeshCount = 0;
-            // Apply fog and log info for all found InstancedMeshes within the loaded scene
+            // Apply fog/shadows and log info for all found InstancedMeshes within the loaded scene
             modelScene.traverse(child => {
                 if (child.isInstancedMesh) {
                     instancedMeshCount++;
                     console.log(`Found InstancedMesh in ${name}: ${child.name || '(no name)'} with count: ${child.count}`);
+                    child.castShadow = true; // Instances cast shadows
+                    child.receiveShadow = true; // Instances receive shadows
                     // Apply fog to the material(s) of the InstancedMesh
                     if (child.material) {
                          if (Array.isArray(child.material)) {
@@ -428,13 +470,17 @@ Promise.all([
                          }
                     }
                 }
-                // Apply fog to any regular meshes within the group too (e.g., if export failed partially)
-                else if (child.isMesh && child.material) {
-                     console.warn(`Found regular mesh '${child.name || '(no name)'}' inside instance group ${name}. Applying fog.`);
-                     if (Array.isArray(child.material)) {
-                         child.material.forEach(mat => { if(mat) mat.fog = true; });
-                     } else {
-                         child.material.fog = true;
+                // Apply fog/shadows to any regular meshes within the group too
+                else if (child.isMesh) {
+                     console.warn(`Found regular mesh '${child.name || '(no name)'}' inside instance group ${name}. Applying fog/shadows.`);
+                     child.castShadow = true;
+                     child.receiveShadow = true;
+                     if (child.material) {
+                         if (Array.isArray(child.material)) {
+                             child.material.forEach(mat => { if(mat) mat.fog = true; });
+                         } else {
+                             child.material.fog = true;
+                         }
                      }
                 }
             });
@@ -460,9 +506,29 @@ Promise.all([
 
      // --- Final Setup ---
      // Set Initial Boat Position (relative to terrain center/size)
-     const startZ = waterCenter.z + size.z * 0.25;
-     boat.position.set(waterCenter.x, WATER_LEVEL_Y, startZ);
+     // <<< ADJUSTED Initial Boat Position >>>
+     const initialOffsetZ = 6; // "North" offset
+     const initialOffsetX = 2; // "East" offset
+     const startZ = waterCenter.z + size.z * 0.25 + initialOffsetZ; // Original Z + offset
+     const startX = waterCenter.x + initialOffsetX; // Original X + offset
+     boat.position.set(startX, WATER_LEVEL_Y, startZ); // Set Y directly to water level
      console.log(`Boat initial position set to: ${boat.position.x.toFixed(2)}, ${boat.position.y.toFixed(2)}, ${boat.position.z.toFixed(2)}`);
+
+     // Apply shadows to boat
+     boat.traverse(child => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            // Apply fog to boat materials
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => { if(mat) mat.fog = true; });
+                } else {
+                    child.material.fog = true;
+                }
+            }
+        }
+     });
 
      // Set Initial Camera State (for 'Overhead' view)
      camera.position.copy(boat.position).add(chaseCameraOffset);
@@ -474,41 +540,16 @@ Promise.all([
      thirdPersonCamera.position.copy(boat.position).add(rotatedThirdPersonOffset);
      thirdPersonCamera.lookAt(boat.position);
 
-     // Update light positions/targets (relative to terrain center/size)
-     sunLight.position.set(waterCenter.x + size.x * 0.5, waterCenter.y + (size.y > 0 ? size.y * 2 : 100), waterCenter.z - size.z * 0.3);
-     sunLight.target.position.copy(waterCenter);
-     sunLight.target.position.y = WATER_LEVEL_Y; // Target the water level plane
-     if (!sunLight.target.parent) scene.add(sunLight.target); // Ensure target is in scene
-     sunLight.target.updateMatrixWorld(); // Update target matrix
+     // <<< Call initial Sky/Sun update AFTER assets are loaded and waterCenter is known >>>
+     updateSkyAndSun();
 
-    // <<< Make terrain material react to fog >>>
-    riverModel.traverse(child => {
-        if (child.isMesh && child.material) {
-             if (Array.isArray(child.material)) {
-                 child.material.forEach(mat => { if(mat) mat.fog = true; });
-             } else {
-                 child.material.fog = true;
-             }
-        }
-    });
-    // <<< Make boat materials react to fog >>>
-    boat.traverse(child => {
-        if (child.isMesh && child.material) {
-            if (Array.isArray(child.material)) {
-                child.material.forEach(mat => { if(mat) mat.fog = true; });
-            } else {
-                child.material.fog = true;
-            }
-        }
-    });
-
-    // Initial shadow camera update after size is known
-    const shadowCamSize = Math.max(size.x, size.z) * 0.6; // Heuristic based on terrain dimensions
-    sunLight.shadow.camera.left = -shadowCamSize;
-    sunLight.shadow.camera.right = shadowCamSize;
-    sunLight.shadow.camera.top = shadowCamSize;
-    sunLight.shadow.camera.bottom = -shadowCamSize;
-    sunLight.shadow.camera.updateProjectionMatrix(); // Apply changes
+     // Update shadow camera bounds now that terrain size is known
+     const shadowCamSize = Math.max(size.x, size.z) * 0.6; // Heuristic based on terrain dimensions
+     sunLight.shadow.camera.left = -shadowCamSize;
+     sunLight.shadow.camera.right = shadowCamSize;
+     sunLight.shadow.camera.top = shadowCamSize;
+     sunLight.shadow.camera.bottom = -shadowCamSize;
+     sunLight.shadow.camera.updateProjectionMatrix(); // Apply changes
 
 
 }).catch(error => {
@@ -516,7 +557,8 @@ Promise.all([
     // Ensure basic fallback water plane if everything else fails
     if (!scene.getObjectByName("water") && !scene.getObjectByName("water_fallback_plane") && !scene.getObjectByName("water_load_error_fallback")) {
          const fallbackMaterial = new THREE.MeshBasicMaterial({
-             color: 0x0000FF, side: THREE.DoubleSide, transparent: true, opacity: waterAlpha, fog: true
+             color: 0x0000FF, side: THREE.DoubleSide, transparent: true,
+             opacity: waterAlpha, fog: true
          });
          const fallbackGeo = new THREE.PlaneGeometry(200 * terrainScale / 10, 200 * terrainScale / 10); // Scaled fallback size
          const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMaterial);
@@ -530,27 +572,9 @@ Promise.all([
      if (boat && waterCenter.lengthSq() === 0) { // Check if waterCenter was never set
          boat.position.set(0, WATER_LEVEL_Y, 50 * terrainScale / 10); // Scaled fallback pos
      }
+     // <<< Call initial Sky/Sun update even on error to set default sky/sun >>>
+     updateSkyAndSun();
 });
-
-// -----------------------------
-// Add Lights to the Scene (Initial setup - Day only)
-// -----------------------------
-// [2025-02-28] Keep all the comments that were there in the original files.
-var ambLight = new THREE.AmbientLight(0xffffff, dayAmbientIntensity); // Uses updated constant
-scene.add(ambLight);
-var sunLight = new THREE.DirectionalLight(0xffffff, daySunIntensity); // Uses updated constant
-sunLight.castShadow = true; // Enable shadows for sunlight
-sunLight.target = new THREE.Object3D(); // Create target object
-scene.add(sunLight.target); // Add target to scene
-scene.add(sunLight); // Add light itself
-
-
-// Configure shadow properties (adjust for performance/quality)
-sunLight.shadow.mapSize.width = 1024; // Default 512
-sunLight.shadow.mapSize.height = 1024; // Default 512
-sunLight.shadow.camera.near = 0.5 * terrainScale / 10; // Scale near plane
-sunLight.shadow.camera.far = fogFar * 1.1; // Adjust shadow camera far plane based on new fogFar
-// Shadow camera bounds will be set properly within the Promise.all().then() once terrain size is known
 
 
 // -----------------------------
@@ -558,21 +582,61 @@ sunLight.shadow.camera.far = fogFar * 1.1; // Adjust shadow camera far plane bas
 // -----------------------------
 const gui = new dat.GUI();
 
-// <<< RENAMED 'Chase' to 'Overhead' >>>
-gui.add(guiState, 'cameraMode', ['Overhead', 'Third Person']) // Renamed option
+// Camera Mode GUI
+gui.add(guiState, 'cameraMode', ['Overhead', 'Third Person']) // Using Overhead and Third Person
     .name('Camera Mode')
     .onChange((value) => {
-        // <<< ADJUSTED logic to check for 'Overhead' >>>
-        currentCamera = (value === 'Third Person') ? thirdPersonCamera : camera; // 'camera' is the 'Overhead' view
+        currentCamera = (value === 'Third Person') ? thirdPersonCamera : camera; // Assign correct camera
         currentCamera.aspect = window.innerWidth / window.innerHeight;
         currentCamera.updateProjectionMatrix();
     });
 
-// <<< REMOVED Lighting Mode GUI control >>>
-// <<< REMOVED Water Anim Speed GUI control >>>
-// <<< REMOVED Water Pattern Scale GUI control >>>
-// <<< REMOVED Water Opacity GUI control >>>
-// <<< REMOVED Axes Helper GUI control >>>
+// <<< REMOVED Sky Settings GUI Folder and controls (using hardcoded) >>>
+// <<< REMOVED Lighting Mode GUI (Sky handles this) >>>
+// <<< REMOVED Water Speed GUI (using hardcoded) >>>
+// <<< REMOVED Axes Helper GUI (helper removed) >>>
+
+
+// --- Initial Sky and Sun Update Function (from Sky snippet) ---
+// Renamed from guiChanged - now only sets initial/hardcoded values
+function updateSkyAndSun() {
+   if (!sky || !sunLight || !sunLight.target) return; // Don't run if essential elements aren't ready
+
+   const uniforms = sky.material.uniforms;
+   // <<< Use hardcoded values from skySettings object >>>
+   uniforms[ 'turbidity' ].value = skySettings.turbidity;
+   uniforms[ 'rayleigh' ].value = skySettings.rayleigh;
+   uniforms[ 'mieCoefficient' ].value = skySettings.mieCoefficient;
+   uniforms[ 'mieDirectionalG' ].value = skySettings.mieDirectionalG;
+
+   // Recalculate sun direction vector using hardcoded elevation/azimuth
+   const phi = THREE.MathUtils.degToRad( 90 - skySettings.elevation );
+   const theta = THREE.MathUtils.degToRad( skySettings.azimuth );
+   sun.setFromSphericalCoords( 1, phi, theta );
+   uniforms[ 'sunPosition' ].value.copy( sun );
+
+   // Update renderer exposure using hardcoded value
+   renderer.toneMappingExposure = skySettings.exposure;
+
+   // Update DirectionalLight to match Sky's sun
+   // Ensure waterCenter is valid before using it for positioning
+   if (waterCenter.lengthSq() > 0) {
+      const lightDistance = 1500; // Keep light distant for parallel rays
+      // Position light source *opposite* to sun direction vector relative to target
+      sunLight.position.copy( waterCenter ).addScaledVector( sun, -lightDistance );
+      // Target remains the center of the scene
+      sunLight.target.position.copy( waterCenter );
+      sunLight.target.position.y = WATER_LEVEL_Y; // Aim towards water level
+      sunLight.target.updateMatrixWorld(); // Update target matrix
+   } else {
+       // Fallback positioning if waterCenter isn't ready (e.g., during initial load errors)
+       sunLight.position.copy(sun).multiplyScalar(-1500); // Position based on origin
+       sunLight.target.position.set(0,0,0);
+       sunLight.target.updateMatrixWorld();
+       console.warn("waterCenter not ready, using fallback sunLight positioning.");
+   }
+}
+
 
 // --- Render Loop Variables ---
 const clock = new THREE.Clock();
@@ -633,7 +697,7 @@ function render() {
 
                     if (intersects.length > 0 && intersects[0].distance < Math.abs(proposedDisplacementZ) + 0.1) {
                         const intersect = intersects[0];
-                        if (intersect.face) {
+                        if (intersect.face && intersect.face.normal) { // Check face and normal exist
                              collisionNormal.copy(intersect.face.normal).transformDirection(boundaryMesh.matrixWorld).normalize();
                         } else {
                             collisionNormal.copy(worldBoatForward).multiplyScalar(-1); // Fallback normal
@@ -651,50 +715,68 @@ function render() {
             if (Math.abs(proposedDisplacementZ) > 0.0001) {
                 boat.translateZ(proposedDisplacementZ);
             }
+            // Keep boat slightly above water level if needed, or directly on it
+            boat.position.y = WATER_LEVEL_Y; // Set Y directly to water level
 
-            // Arm and Oar Animation
-             if (leftUpperArmRef && rightUpperArmRef && leftOarRef && rightOarRef) {
-                 const animIntensity = Math.min(1, currentSpeed / (maxSpeed * 0.75));
-                 const time = elapsedTime * rowingSpeedFactor;
-                 const pullPhase = Math.sin(time);
-                 const dipPhase = Math.sin(time + Math.PI / 2);
-                 const rowingAngle = (pullPhase * 0.5 + 0.5) * maxRowingAngle * animIntensity;
-                 const forwardAngle = dipPhase * (Math.PI / 6) * animIntensity;
-                 const bladeAngleY = Math.abs(dipPhase) * (Math.PI / 8) * animIntensity;
-                 const verticalDip = -Math.max(0, dipPhase) * 0.15 * animIntensity;
+            // <<< Arm and Oar Animation from Oar/Arm Snippet >>>
+            if (leftUpperArmRef && rightUpperArmRef && leftOarRef && rightOarRef) {
+                const animIntensity = Math.min(1, currentSpeed / (maxSpeed * 0.75));
+                const time = elapsedTime * rowingSpeedFactor;
 
-                 // Left arm/oar
-                 leftUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
-                 leftUpperArmRef.rotation.z = -Math.PI / 6 - forwardAngle;
-                 leftOarRef.rotation.x = baseArmAngle + rowingAngle;
-                 leftOarRef.rotation.z = -Math.PI / 6 - forwardAngle;
-                 leftOarRef.rotation.y = -bladeAngleY;
-                 leftOarRef.position.y = (0.6 * 1.8 * 0.7 - 0.8) + verticalDip;
+                // Create a more natural rowing motion with proper pull and dip
+                const pullPhase = Math.sin(time);
+                const dipPhase = Math.sin(time + Math.PI/2); // Use sin offset for smoother dip
 
-                 // Right arm/oar
-                 rightUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
-                 rightUpperArmRef.rotation.z = Math.PI / 6 + forwardAngle;
-                 rightOarRef.rotation.x = baseArmAngle + rowingAngle;
-                 rightOarRef.rotation.z = Math.PI / 6 + forwardAngle;
-                 rightOarRef.rotation.y = bladeAngleY;
-                 rightOarRef.position.y = (0.6 * 1.8 * 0.7 - 0.8) + verticalDip;
-             }
+                // Calculate angles based on phases
+                const rowingAngle = (pullPhase * 0.5 + 0.5) * maxRowingAngle * animIntensity; // Back-and-forth swing (0 to max angle)
+                const forwardAngle = dipPhase * (Math.PI / 4) * animIntensity; // Sideways twist for forward reach
+                const bladeAngle = Math.abs(dipPhase) * 0.5 * animIntensity; // Oar blade rotation (feathering) - Use dipPhase
+
+                // Left arm and oar
+                leftUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
+                leftUpperArmRef.rotation.z = Math.PI / 6 - forwardAngle; // Base outward angle + forward reach twist
+                // Oar follows arm with additional blade rotation
+                leftOarRef.rotation.x = baseArmAngle + rowingAngle;
+                leftOarRef.rotation.z = Math.PI / 6 - forwardAngle;
+                leftOarRef.rotation.y = -bladeAngle; // Feathering rotation
+                // Adjust oar Y position dynamically based on hand movement (simplified) using the corrected base Y
+                leftOarRef.position.y = oarPivotY + Math.sin(time) * 0.1 * animIntensity; // Use oarPivotY + vertical oscillation
+
+                // Right arm and oar
+                rightUpperArmRef.rotation.x = baseArmAngle + rowingAngle;
+                rightUpperArmRef.rotation.z = -Math.PI / 6 + forwardAngle; // Base outward angle + forward reach twist
+                // Oar follows arm with additional blade rotation
+                rightOarRef.rotation.x = baseArmAngle + rowingAngle;
+                rightOarRef.rotation.z = -Math.PI / 6 + forwardAngle;
+                rightOarRef.rotation.y = bladeAngle; // Feathering rotation
+                // Adjust oar Y position dynamically based on hand movement (simplified) using the corrected base Y
+                rightOarRef.position.y = oarPivotY + Math.sin(time) * 0.1 * animIntensity; // Use oarPivotY + vertical oscillation
+            }
+            // <<< End Oar/Arm Animation Block >>>
+
         } // End boat physics update
 
         // Update Cameras
         if (boat) { // Only update cameras if boat exists
              if (currentCamera === camera) { // 'Overhead' view
                  boat.getWorldPosition(boatWorldPosition);
+                 // Keep camera position relative to boat, ensure minimum height above water
                  desiredCamPos.copy(boatWorldPosition).add(chaseCameraOffset);
+                 desiredCamPos.y = Math.max(WATER_LEVEL_Y + 10, desiredCamPos.y); // Ensure minimum height
+                 // Look slightly below boat
                  const lookAtTarget = new THREE.Vector3(boatWorldPosition.x, Math.max(WATER_LEVEL_Y - 5, boatWorldPosition.y - 5), boatWorldPosition.z);
                  camera.position.lerp(desiredCamPos, cameraLerpFactor);
                  camera.lookAt(lookAtTarget);
              } else if (currentCamera === thirdPersonCamera) { // Third person view
                  boat.getWorldPosition(boatWorldPosition);
                  boat.getWorldQuaternion(boatWorldQuaternion);
+                 // Calculate position behind boat, ensure minimum height
                  desiredCamPos.copy(thirdPersonOffset).applyQuaternion(boatWorldQuaternion).add(boatWorldPosition);
-                 const lookAtOffset = new THREE.Vector3(0, 2, -10);
+                 desiredCamPos.y = Math.max(WATER_LEVEL_Y + 2, desiredCamPos.y); // Ensure minimum height
+                 // Look slightly ahead and below boat
+                 const lookAtOffset = new THREE.Vector3(0, -1, -10); // Look slightly down
                  const lookAtTarget = lookAtOffset.applyQuaternion(boatWorldQuaternion).add(boatWorldPosition);
+                 lookAtTarget.y = Math.max(WATER_LEVEL_Y - 2, lookAtTarget.y); // Ensure look target isn't too low
                  thirdPersonCamera.position.lerp(desiredCamPos, cameraLerpFactor);
                  thirdPersonCamera.lookAt(lookAtTarget);
              }
@@ -711,14 +793,15 @@ renderer.setAnimationLoop(render);
 
 
 // --- Keyboard Event Listeners ---
+// [2025-02-28] Keep all the comments that were there in the original files.
 document.addEventListener("keydown", (event) => {
-    // [2025-02-28] Keep all the comments that were there in the original files.
     if (event.target.tagName === 'INPUT' || event.target.isContentEditable) return;
     const key = event.key.toLowerCase();
     switch (key) {
         case 'w': case 'arrowup': isAccelerating = true; break;
         case 'a': case 'arrowleft': isTurningLeft = true; isTurningRight = false; break;
         case 'd': case 'arrowright': isTurningRight = true; isTurningLeft = false; break;
+        // <<< REMOVED 'q' keybind for axes helper >>>
         default: break;
     }
 });
@@ -734,9 +817,9 @@ document.addEventListener("keyup", (event) => {
 });
 
 // --- Window Resize Handler ---
+// [2025-02-28] Keep all the comments that were there in the original files.
 window.addEventListener('resize', onWindowResize, false);
 function onWindowResize() {
-    // [2025-02-28] Keep all the comments that were there in the original files.
     const aspect = window.innerWidth / window.innerHeight;
     camera.aspect = aspect; camera.updateProjectionMatrix(); // 'Overhead' camera
     thirdPersonCamera.aspect = aspect; thirdPersonCamera.updateProjectionMatrix(); // Third person
