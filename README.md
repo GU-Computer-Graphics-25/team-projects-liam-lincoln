@@ -10,13 +10,12 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 ### Material, Lighting, and Shading
 - Custom water shader with dynamic patterns
 - Ambient and directional lighting system
-- Smooth transitions between day and night modes
 - Proper material properties for all scene elements
+- sky box environment and z buffer based fog library implimented
 
 ### Camera System
-- Three distinct camera modes:
-  - Overhead view: Provides top-down perspective
-  - Third-person view: Dynamic camera positioning
+- Overhead view: Provides top-down perspective
+- Third-person view: Dynamic camera positioning
 - Smooth camera transitions and position interpolation
 - Automatic camera adjustments based on boat movement
 
@@ -38,9 +37,8 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 ### Animation System
 - Speed-synchronized rowing arm animations
 - Dynamic water surface movement
-- Physics-based boat motion
+- Smooth boat motion
 - Frame-rate independent animations
-- Smooth transitions between states
 
 ### Modeling
 - Procedurally generated models:
@@ -53,6 +51,8 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 - Imported Blender models:
   - Terrain mesh
   - Water mesh
+  - tree mesh
+  - rock mesh
 - Proper scaling and positioning
 - Optimized model loading and rendering
 
