@@ -11,24 +11,22 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 - Custom water shader with dynamic patterns
 - Ambient and directional lighting system
 - Proper material properties for all scene elements
-- sky box environment and z buffer based fog library implimented
+- Sky box environment and Z buffer fog
 
 ### Camera System
 - Overhead view: Provides top-down perspective
 - Third-person view: Dynamic camera positioning
-- Smooth camera transitions and position interpolation
 - Automatic camera adjustments based on boat movement
 
 ### Textures and Texture Mapping
 - Dynamic shader-based water textures
 - Imported terrain textures from Blender
 - Proper UV mapping implementation
-- Adjustable texture scaling
 - Procedural texture generation for water effects
 
 ### User Interaction
 - WASD/Arrow key controls for boat navigation
-- Realistic physics-based movement
+- Realistic movement
 - Collision detection system
 - GUI controls for:
   - Camera view selection
@@ -42,7 +40,6 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 
 ### Modeling
 - Procedurally generated models:
-  - Terrain
   - Water surface
 - Basic THREE.js models:
   - trees
@@ -51,10 +48,8 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 - Imported Blender models:
   - Terrain mesh
   - Water mesh
-  - tree mesh
-  - rock mesh
 - Proper scaling and positioning
-- Optimized model loading and rendering
+- Optimized model loading and rendering (GPU mesh instance)
 
 ## Technical Implementation
 

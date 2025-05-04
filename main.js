@@ -31,10 +31,10 @@ const collisionNudge = 0.01; // Tiny push away from wall to prevent sticking
 // Animation
 const rowingSpeedFactor = 8;
 const maxRowingAngle = Math.PI / 3; // Increased angle for more dramatic motion
-const baseArmAngle = Math.PI / 6;
+const baseArmAngle = Math.PI / 4;
 // Lighting (Adjusted for Sky)
-const dayAmbientIntensity = 0.7; // <<< Base ambient light, sky provides main lighting (Slightly Increased) >>>
-const daySunIntensity = 1.2;    // <<< Intensity for the DirectionalLight matching the Sky's sun (Slightly Increased) >>>
+const dayAmbientIntensity = 1.2; // <<< Base ambient light, sky provides main lighting (Slightly Increased) >>>
+const daySunIntensity = 10;    // <<< Intensity for the DirectionalLight matching the Sky's sun (Slightly Increased) >>>
 // Fog
 const fogColor = 0xacdbfc; // Low saturation bright blue (Fog blends *towards* this color) (from Sky snippet)
 const fogNear = 0 * terrainScale;
@@ -187,7 +187,7 @@ const oarBladeGeometry = new THREE.BoxGeometry(0.15, 0.4, 0.8);
 const oarBladeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
 
 // <<< ADJUSTED Oar Y Position >>>
-const oarPivotY = 0.6 * 1.8 * 0.7 - 0.6; // Adjusted Y position (higher than before)
+const oarPivotY = 0.6 * 1.8 * 0.7 - 0.3; // Adjusted Y position (higher than before)
 
 // Left oar
 leftOarRef = new THREE.Object3D(); // This is the pivot point
@@ -507,8 +507,8 @@ Promise.all([
      // --- Final Setup ---
      // Set Initial Boat Position (relative to terrain center/size)
      // <<< ADJUSTED Initial Boat Position >>>
-     const initialOffsetZ = 6; // "North" offset
-     const initialOffsetX = 2; // "East" offset
+     const initialOffsetZ = -60; // "North" offset
+     const initialOffsetX = 25; // "East" offset
      const startZ = waterCenter.z + size.z * 0.25 + initialOffsetZ; // Original Z + offset
      const startX = waterCenter.x + initialOffsetX; // Original X + offset
      boat.position.set(startX, WATER_LEVEL_Y, startZ); // Set Y directly to water level
