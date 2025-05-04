@@ -23,6 +23,7 @@ A dynamic 3D scene featuring an interactive river environment with a rowing boat
 - Imported terrain textures from Blender
 - Proper UV mapping implementation
 - Procedural texture generation for water effects
+- texture mapped wood jpg texture onto boat object
 
 ### User Interaction
 - WASD/Arrow key controls for boat navigation

@@ -55,6 +55,33 @@ const skySettings = {
    exposure: 1.0 // Initial exposure
 };
 
+// Add texture loader
+const textureLoader = new THREE.TextureLoader();
+const woodTexture = textureLoader.load('assets/woodwall.jpg', 
+    // Success callback
+    (texture) => {
+        console.log('Wood texture loaded successfully');
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(2, 2);
+        // Update materials if they exist
+        if (raftSideMaterial) {
+            raftSideMaterial.map = texture;
+            raftSideMaterial.needsUpdate = true;
+        }
+        if (raftTopMaterial) {
+            raftTopMaterial.map = texture;
+            raftTopMaterial.needsUpdate = true;
+        }
+    },
+    // Progress callback
+    undefined,
+    // Error callback
+    (error) => {
+        console.error('Error loading wood texture:', error);
+    }
+);
+
 // --- State Variables ---
 // Boat
 let currentSpeed = 0.0;
@@ -165,8 +192,20 @@ function createRaftBufferGeometry() {
 // -----------------------------
 // [2025-02-28] Keep all the comments that were there in the original files.
 boat = new THREE.Object3D(); boat.name = "boat";
-const raftSideMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, metalness: 0.2, roughness: 0.8, side: THREE.DoubleSide });
-const raftTopMaterial = new THREE.MeshStandardMaterial({ color: 0xCD853F, metalness: 0.2, roughness: 0.7, side: THREE.DoubleSide });
+const raftSideMaterial = new THREE.MeshStandardMaterial({ 
+    map: woodTexture,
+    metalness: 0.2, 
+    roughness: 0.8, 
+    side: THREE.DoubleSide,
+    color: 0xffffff // Use white as base color to not interfere with texture
+});
+const raftTopMaterial = new THREE.MeshStandardMaterial({ 
+    map: woodTexture,
+    metalness: 0.2, 
+    roughness: 0.7, 
+    side: THREE.DoubleSide,
+    color: 0xffffff // Use white as base color to not interfere with texture
+});
 const raftMaterials = [raftSideMaterial, raftTopMaterial];
 const raftGeometry = createRaftBufferGeometry();
 const raftMesh = new THREE.Mesh(raftGeometry, raftMaterials); raftMesh.name = "raftMesh";
