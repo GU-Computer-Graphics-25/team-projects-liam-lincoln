@@ -6,9 +6,7 @@ export default defineConfig({
         outDir: 'dist', // Output directory for build files
         emptyOutDir: true // Clean the output directory before building
     },
-    resolve: {
-        alias: {
-          'three': 'three'
-        }
-      }
+    optimizeDeps: {
+        include: ['three']
+    },
 })
