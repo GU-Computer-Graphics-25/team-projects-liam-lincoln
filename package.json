@@ -4,6 +4,7 @@
   "description": "this projects demosntrates using node.js with threeks and textures",
   "main": "main.js",
   "scripts": {
+    "build": "mkdir -p dist && cp index.html dist/index.html && cp -r assets dist/assets && cp -r js dist/js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
