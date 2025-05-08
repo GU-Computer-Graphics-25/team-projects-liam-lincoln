@@ -15,8 +15,8 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Build
-        run: npm run build # Assuming a build script exists in package.json
+      - name: Build Project
+        run: npm run build
 
 
 

@@ -1,12 +1,12 @@
-// Import Three.js core
 import * as THREE from 'three';
-// GLTF/DRACO Loaders are still needed for models
+
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-// Import dat.GUI
 import * as dat from 'dat.gui';
-// Import Sky addon <<< ADDED Sky Import >>>
+
 import { Sky } from 'three/addons/objects/Sky.js';
+
+
 
 // --- Configuration ---
 const terrainScale = 10;
@@ -68,7 +68,7 @@ const woodTexture = textureLoader.load('assets/woodwall.jpg',
         if (raftSideMaterial) {
             raftSideMaterial.map = texture;
             raftSideMaterial.needsUpdate = true;
-        }
+        } 
         if (raftTopMaterial) {
             raftTopMaterial.map = texture;
             raftTopMaterial.needsUpdate = true;
@@ -872,4 +872,3 @@ function onWindowResize() {
 onWindowResize();
 
 console.log("Three.js scene setup complete. Waiting for assets...");
-
