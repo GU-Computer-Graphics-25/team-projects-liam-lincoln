@@ -3,7 +3,7 @@ name: Build and Deploy Three.js Game
 on:
   push:
     tags:
-      - '*' # Trigger on any tag push
+      - 'v*' # Trigger on tags starting with 'v'
 
 
 jobs:
